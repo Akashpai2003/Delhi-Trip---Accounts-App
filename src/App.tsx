@@ -23,6 +23,7 @@ import {
   Navigation,
   Utensils,
   Wallet,
+  LogOut,
 } from "lucide-react";
 
 // --- Types ---
@@ -42,6 +43,7 @@ type IncomeCategory =
   | "Friend reimbursement"
   | "Custom source";
 type AccountType = "trip" | "savings";
+type PlaceCategory = "Street Food" | "Casual Dining" | "Premium" | "Hotspot";
 
 interface Expense {
   id: string;
@@ -60,6 +62,12 @@ interface Income {
   category: IncomeCategory;
   date: string;
   accountId: AccountType;
+}
+
+interface Place {
+  id: string;
+  title: string;
+  category: PlaceCategory;
 }
 
 // --- Constants ---
@@ -98,34 +106,160 @@ const formatCurrency = (amount: number) => {
     style: "currency",
     currency: "INR",
     maximumFractionDigits: 0,
-  }).format(amount);
+  }).format(amount || 0);
 };
 
 export default function App() {
-  // --- State ---
+  // --- App State ---
+  const [appState, setAppState] = useState<"splash" | "auth" | "main">(
+    "splash",
+  );
+  const [token, setToken] = useState<string | null>(
+    localStorage.getItem("token"),
+  );
+  const [username, setUsername] = useState<string | null>(
+    localStorage.getItem("username"),
+  );
+
+  // --- Auth State ---
+  const [authMode, setAuthMode] = useState<"login" | "register">("login");
+  const [authUsername, setAuthUsername] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [authError, setAuthError] = useState("");
+
+  // --- Main State ---
   const [activeTab, setActiveTab] = useState<Tab>("dashboard");
 
   // Fixed Finances State (Trip)
-  const [totalBudget, setTotalBudget] = useState(30000);
-  const [platinumTicket, setPlatinumTicket] = useState(22500);
-  const [pendingPlatinum, setPendingPlatinum] = useState(11500);
-  const [flightTotal, setFlightTotal] = useState(22500);
-  const [myFlightShare, setMyFlightShare] = useState(11250);
-  const [stay, setStay] = useState(2000);
-  const [expectedIncoming, setExpectedIncoming] = useState(11250);
+  const [totalBudget, setTotalBudget] = useState(0);
+  const [platinumTicket, setPlatinumTicket] = useState(0);
+  const [pendingPlatinum, setPendingPlatinum] = useState(0);
+  const [flightTotal, setFlightTotal] = useState(0);
+  const [myFlightShare, setMyFlightShare] = useState(0);
+  const [stay, setStay] = useState(0);
+  const [expectedIncoming, setExpectedIncoming] = useState(0);
 
   // Fixed Finances State (Savings)
-  const [baseSavings, setBaseSavings] = useState(50000);
+  const [baseSavings, setBaseSavings] = useState(0);
 
   // Dynamic Entries State
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [incomes, setIncomes] = useState<Income[]>([]);
+  const [places, setPlaces] = useState<Place[]>([]);
 
   // UI State
   const [isEditingTrip, setIsEditingTrip] = useState(false);
   const [isEditingSavings, setIsEditingSavings] = useState(false);
   const [isAddExpenseOpen, setIsAddExpenseOpen] = useState(false);
   const [isAddIncomeOpen, setIsAddIncomeOpen] = useState(false);
+
+  // --- Initialization ---
+  useEffect(() => {
+    // Splash screen timer
+    const timer = setTimeout(() => {
+      if (token) {
+        setAppState("main");
+        fetchData();
+      } else {
+        setAppState("auth");
+      }
+    }, 2000);
+    return () => clearTimeout(timer);
+  }, [token]);
+
+  // --- API Calls ---
+  const getHeaders = () => ({
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${token}`,
+  });
+
+  const fetchData = async () => {
+    try {
+      const res = await fetch("/api/data", { headers: getHeaders() });
+      if (res.status === 401) {
+        handleLogout();
+        return;
+      }
+      const data = await res.json();
+
+      if (data.finances) {
+        setTotalBudget(data.finances.totalBudget || 0);
+        setPlatinumTicket(data.finances.platinumTicket || 0);
+        setPendingPlatinum(data.finances.pendingPlatinum || 0);
+        setFlightTotal(data.finances.flightTotal || 0);
+        setMyFlightShare(data.finances.myFlightShare || 0);
+        setStay(data.finances.stay || 0);
+        setExpectedIncoming(data.finances.expectedIncoming || 0);
+        setBaseSavings(data.finances.baseSavings || 0);
+      }
+      if (data.expenses) setExpenses(data.expenses);
+      if (data.incomes) setIncomes(data.incomes);
+      if (data.places) setPlaces(data.places);
+    } catch (err) {
+      console.error("Failed to fetch data", err);
+    }
+  };
+
+  const saveFinances = async () => {
+    try {
+      await fetch("/api/finances", {
+        method: "POST",
+        headers: getHeaders(),
+        body: JSON.stringify({
+          totalBudget,
+          platinumTicket,
+          pendingPlatinum,
+          flightTotal,
+          myFlightShare,
+          stay,
+          expectedIncoming,
+          baseSavings,
+        }),
+      });
+    } catch (err) {
+      console.error("Failed to save finances", err);
+    }
+  };
+
+  useEffect(() => {
+    if (appState === "main" && !isEditingTrip && !isEditingSavings) {
+      saveFinances();
+    }
+  }, [isEditingTrip, isEditingSavings]);
+
+  const handleAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError("");
+    try {
+      const res = await fetch(`/api/auth/${authMode}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          username: authUsername,
+          password: authPassword,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Authentication failed");
+
+      localStorage.setItem("token", data.token);
+      localStorage.setItem("username", data.username);
+      setToken(data.token);
+      setUsername(data.username);
+      setAppState("main");
+      fetchData();
+    } catch (err: any) {
+      setAuthError(err.message);
+    }
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem("token");
+    localStorage.removeItem("username");
+    setToken(null);
+    setUsername(null);
+    setAppState("auth");
+  };
 
   // --- Calculations ---
   const tripExpenses = expenses.filter((e) => e.accountId === "trip");
@@ -158,6 +292,103 @@ export default function App() {
     baseSavings + savingsDynamicIncome - savingsDynamicSpent;
 
   // --- Components ---
+
+  if (appState === "splash") {
+    return (
+      <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="text-center"
+        >
+          <div className="w-20 h-20 bg-indigo-500/20 rounded-3xl mx-auto flex items-center justify-center mb-6 border border-indigo-500/30">
+            <Compass className="w-10 h-10 text-indigo-400" />
+          </div>
+          <h1 className="text-3xl font-bold text-zinc-100 tracking-tight">
+            WanderSync
+          </h1>
+          <p className="text-zinc-500 mt-2 font-medium">
+            Your trip, perfectly planned.
+          </p>
+        </motion.div>
+      </div>
+    );
+  }
+
+  if (appState === "auth") {
+    return (
+      <div className="min-h-screen bg-zinc-950 flex items-center justify-center p-6">
+        <div className="w-full max-w-sm bg-zinc-900/50 backdrop-blur-md border border-zinc-800/50 rounded-3xl p-8 shadow-2xl">
+          <div className="w-12 h-12 bg-indigo-500/20 rounded-2xl flex items-center justify-center mb-6 border border-indigo-500/30">
+            <Compass className="w-6 h-6 text-indigo-400" />
+          </div>
+          <h2 className="text-2xl font-bold text-zinc-100 mb-2">
+            {authMode === "login" ? "Welcome back" : "Create account"}
+          </h2>
+          <p className="text-zinc-500 text-sm mb-8">
+            {authMode === "login"
+              ? "Enter your details to access your trip."
+              : "Start planning your next adventure."}
+          </p>
+
+          <form onSubmit={handleAuth} className="space-y-4">
+            {authError && (
+              <div className="p-3 bg-rose-500/10 border border-rose-500/20 rounded-xl text-rose-400 text-sm">
+                {authError}
+              </div>
+            )}
+
+            <div>
+              <label className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-1.5 block">
+                Username
+              </label>
+              <input
+                type="text"
+                required
+                value={authUsername}
+                onChange={(e) => setAuthUsername(e.target.value)}
+                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-zinc-100 focus:outline-none focus:border-indigo-500 transition-colors"
+                placeholder="johndoe"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-1.5 block">
+                Password
+              </label>
+              <input
+                type="password"
+                required
+                value={authPassword}
+                onChange={(e) => setAuthPassword(e.target.value)}
+                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-zinc-100 focus:outline-none focus:border-indigo-500 transition-colors"
+                placeholder="••••••••"
+              />
+            </div>
+            <button
+              type="submit"
+              className="w-full bg-indigo-500 hover:bg-indigo-600 text-white py-3.5 rounded-xl font-semibold transition-colors mt-2"
+            >
+              {authMode === "login" ? "Sign In" : "Sign Up"}
+            </button>
+          </form>
+
+          <div className="mt-6 text-center">
+            <button
+              onClick={() => {
+                setAuthMode(authMode === "login" ? "register" : "login");
+                setAuthError("");
+              }}
+              className="text-sm text-zinc-400 hover:text-zinc-300"
+            >
+              {authMode === "login"
+                ? "Don't have an account? Sign up"
+                : "Already have an account? Sign in"}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const DashboardTab = () => (
     <div className="space-y-6 animate-in fade-in duration-500 pb-24">
@@ -364,52 +595,70 @@ export default function App() {
     );
     const [newIncAccount, setNewIncAccount] = useState<AccountType>("trip");
 
-    const handleAddExpense = (e: React.FormEvent) => {
+    const handleAddExpense = async (e: React.FormEvent) => {
       e.preventDefault();
       if (!newExpTitle || !newExpAmount) return;
-      setExpenses([
-        {
-          id: Date.now().toString(),
-          title: newExpTitle,
-          amount: Number(newExpAmount),
-          category: newExpCat,
-          accountId: newExpAccount,
-          date: new Date().toLocaleDateString("en-GB", {
-            day: "numeric",
-            month: "short",
-          }),
-          time: new Date().toLocaleTimeString("en-US", {
-            hour: "2-digit",
-            minute: "2-digit",
-          }),
-        },
-        ...expenses,
-      ]);
-      setIsAddExpenseOpen(false);
-      setNewExpTitle("");
-      setNewExpAmount("");
+
+      const newExp: Expense = {
+        id: Date.now().toString(),
+        title: newExpTitle,
+        amount: Number(newExpAmount),
+        category: newExpCat,
+        accountId: newExpAccount,
+        date: new Date().toLocaleDateString("en-GB", {
+          day: "numeric",
+          month: "short",
+        }),
+        time: new Date().toLocaleTimeString("en-US", {
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
+      };
+
+      try {
+        await fetch("/api/expenses", {
+          method: "POST",
+          headers: getHeaders(),
+          body: JSON.stringify(newExp),
+        });
+        setExpenses([newExp, ...expenses]);
+        setIsAddExpenseOpen(false);
+        setNewExpTitle("");
+        setNewExpAmount("");
+      } catch (err) {
+        console.error("Failed to add expense", err);
+      }
     };
 
-    const handleAddIncome = (e: React.FormEvent) => {
+    const handleAddIncome = async (e: React.FormEvent) => {
       e.preventDefault();
       if (!newIncTitle || !newIncAmount) return;
-      setIncomes([
-        {
-          id: Date.now().toString(),
-          title: newIncTitle,
-          amount: Number(newIncAmount),
-          category: newIncCat,
-          accountId: newIncAccount,
-          date: new Date().toLocaleDateString("en-GB", {
-            day: "numeric",
-            month: "short",
-          }),
-        },
-        ...incomes,
-      ]);
-      setIsAddIncomeOpen(false);
-      setNewIncTitle("");
-      setNewIncAmount("");
+
+      const newInc: Income = {
+        id: Date.now().toString(),
+        title: newIncTitle,
+        amount: Number(newIncAmount),
+        category: newIncCat,
+        accountId: newIncAccount,
+        date: new Date().toLocaleDateString("en-GB", {
+          day: "numeric",
+          month: "short",
+        }),
+      };
+
+      try {
+        await fetch("/api/incomes", {
+          method: "POST",
+          headers: getHeaders(),
+          body: JSON.stringify(newInc),
+        });
+        setIncomes([newInc, ...incomes]);
+        setIsAddIncomeOpen(false);
+        setNewIncTitle("");
+        setNewIncAmount("");
+      } catch (err) {
+        console.error("Failed to add income", err);
+      }
     };
 
     const filteredExpenses =
@@ -807,84 +1056,146 @@ export default function App() {
     </div>
   );
 
-  const ExploreTab = () => (
-    <div className="space-y-8 animate-in fade-in duration-500 pb-24">
-      {/* Map Placeholder */}
-      <div className="relative h-48 rounded-3xl overflow-hidden border border-zinc-800/50 bg-zinc-900">
-        <div
-          className="absolute inset-0 opacity-20"
-          style={{
-            backgroundImage:
-              "radial-gradient(circle at 2px 2px, white 1px, transparent 0)",
-            backgroundSize: "24px 24px",
-          }}
-        />
-        <div className="absolute inset-0 flex items-center justify-center flex-col gap-2">
-          <MapPin className="w-8 h-8 text-indigo-400" />
-          <span className="text-sm font-medium text-zinc-400">
-            Map View Integrated
-          </span>
+  const ExploreTab = () => {
+    const [newPlaceTitle, setNewPlaceTitle] = useState("");
+    const [newPlaceCat, setNewPlaceCat] =
+      useState<PlaceCategory>("Street Food");
+
+    const handleAddPlace = async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!newPlaceTitle) return;
+
+      const newPlace: Place = {
+        id: Date.now().toString(),
+        title: newPlaceTitle,
+        category: newPlaceCat,
+      };
+
+      try {
+        await fetch("/api/places", {
+          method: "POST",
+          headers: getHeaders(),
+          body: JSON.stringify(newPlace),
+        });
+        setPlaces([newPlace, ...places]);
+        setNewPlaceTitle("");
+      } catch (err) {
+        console.error("Failed to add place", err);
+      }
+    };
+
+    const streetFood = places.filter((p) => p.category === "Street Food");
+    const casualDining = places.filter((p) => p.category === "Casual Dining");
+    const premium = places.filter((p) => p.category === "Premium");
+    const hotspots = places.filter((p) => p.category === "Hotspot");
+
+    return (
+      <div className="space-y-8 animate-in fade-in duration-500 pb-24">
+        {/* Add Location Form */}
+        <div className="bg-zinc-900/40 backdrop-blur-md border border-zinc-800/50 rounded-3xl p-6">
+          <h3 className="text-sm font-semibold text-zinc-400 uppercase tracking-wider mb-4">
+            Add Location
+          </h3>
+          <form onSubmit={handleAddPlace} className="space-y-3">
+            <input
+              type="text"
+              required
+              value={newPlaceTitle}
+              onChange={(e) => setNewPlaceTitle(e.target.value)}
+              placeholder="e.g. Chandni Chowk Parathas"
+              className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500"
+            />
+            <div className="flex gap-2">
+              <select
+                value={newPlaceCat}
+                onChange={(e) =>
+                  setNewPlaceCat(e.target.value as PlaceCategory)
+                }
+                className="flex-1 bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500 appearance-none"
+              >
+                <option value="Street Food">Street Food (&lt;₹300)</option>
+                <option value="Casual Dining">Casual Dining (&lt;₹800)</option>
+                <option value="Premium">Premium (₹1500+)</option>
+                <option value="Hotspot">Hotspot / Attraction</option>
+              </select>
+              <button
+                type="submit"
+                className="bg-indigo-500 hover:bg-indigo-600 text-white px-6 rounded-xl font-semibold transition-colors"
+              >
+                Add
+              </button>
+            </div>
+          </form>
+        </div>
+
+        {/* Food Guide */}
+        <div>
+          <h3 className="text-lg font-semibold text-zinc-100 mb-4 flex items-center gap-2">
+            <Utensils className="w-5 h-5 text-orange-400" /> Food Guide
+          </h3>
+          <div className="space-y-3">
+            <GuideCard
+              title="Street Food"
+              subtitle="Under ₹300"
+              items={streetFood}
+            />
+            <GuideCard
+              title="Casual Dining"
+              subtitle="Under ₹800"
+              items={casualDining}
+            />
+            <GuideCard title="Premium" subtitle="₹1500+" items={premium} />
+          </div>
+        </div>
+
+        {/* Hotspots */}
+        <div>
+          <h3 className="text-lg font-semibold text-zinc-100 mb-4 flex items-center gap-2">
+            <Compass className="w-5 h-5 text-emerald-400" /> Hotspots
+          </h3>
+          <div className="flex flex-wrap gap-2">
+            {hotspots.length === 0 && (
+              <p className="text-sm text-zinc-500 italic">
+                No hotspots added yet.
+              </p>
+            )}
+            {hotspots.map((spot) => (
+              <span
+                key={spot.id}
+                className="px-4 py-2 bg-zinc-900/50 border border-zinc-800/50 rounded-full text-sm text-zinc-300"
+              >
+                {spot.title}
+              </span>
+            ))}
+          </div>
         </div>
       </div>
+    );
+  };
 
-      {/* Food Guide */}
-      <div>
-        <h3 className="text-lg font-semibold text-zinc-100 mb-4 flex items-center gap-2">
-          <Utensils className="w-5 h-5 text-orange-400" /> Food Guide
-        </h3>
-        <div className="space-y-3">
-          <GuideCard
-            title="Street Food"
-            subtitle="Under ₹300"
-            desc="Chandni Chowk, Jama Masjid area for kebabs and parathas."
-          />
-          <GuideCard
-            title="Casual Dining"
-            subtitle="Under ₹800"
-            desc="Majnu Ka Tila, Hudson Lane cafes, CP local spots."
-          />
-          <GuideCard
-            title="Premium"
-            subtitle="₹1500+"
-            desc="Cyber Hub, Khan Market, Aerocity fine dining."
-          />
-        </div>
-      </div>
-
-      {/* Hotspots */}
-      <div>
-        <h3 className="text-lg font-semibold text-zinc-100 mb-4 flex items-center gap-2">
-          <Compass className="w-5 h-5 text-emerald-400" /> Hotspots
-        </h3>
-        <div className="flex flex-wrap gap-2">
-          {[
-            "India Gate",
-            "Humayun Tomb",
-            "Qutub Minar",
-            "Hauz Khas",
-            "Connaught Place",
-          ].map((spot) => (
-            <span
-              key={spot}
-              className="px-4 py-2 bg-zinc-900/50 border border-zinc-800/50 rounded-full text-sm text-zinc-300"
-            >
-              {spot}
-            </span>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-
-  const GuideCard = ({ title, subtitle, desc }: any) => (
+  const GuideCard = ({ title, subtitle, items }: any) => (
     <div className="bg-zinc-900/40 backdrop-blur-md border border-zinc-800/50 rounded-2xl p-4">
-      <div className="flex justify-between items-center mb-1">
+      <div className="flex justify-between items-center mb-3">
         <h4 className="font-medium text-zinc-100">{title}</h4>
         <span className="text-xs font-semibold text-zinc-500 bg-zinc-800 px-2 py-1 rounded-md">
           {subtitle}
         </span>
       </div>
-      <p className="text-sm text-zinc-400">{desc}</p>
+      {items.length === 0 ? (
+        <p className="text-sm text-zinc-500 italic">No places added yet.</p>
+      ) : (
+        <ul className="space-y-2">
+          {items.map((item: Place) => (
+            <li
+              key={item.id}
+              className="text-sm text-zinc-300 flex items-center gap-2"
+            >
+              <div className="w-1.5 h-1.5 rounded-full bg-zinc-700" />
+              {item.title}
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 
@@ -926,15 +1237,16 @@ export default function App() {
         <header className="px-6 pt-12 pb-6 flex items-center justify-between z-10 sticky top-0 bg-zinc-950/80 backdrop-blur-xl border-b border-zinc-900/50">
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">
-              Delhi Trip
+              WanderSync
             </h1>
-            <p className="text-sm text-zinc-500 mt-0.5">
-              27th Night - 30th Night
-            </p>
+            <p className="text-sm text-zinc-500 mt-0.5">Welcome, {username}</p>
           </div>
-          <div className="w-10 h-10 rounded-full bg-indigo-500/10 flex items-center justify-center text-indigo-400 border border-indigo-500/20">
-            <span className="font-semibold text-sm">AK</span>
-          </div>
+          <button
+            onClick={handleLogout}
+            className="w-10 h-10 rounded-full bg-zinc-900 flex items-center justify-center text-zinc-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors border border-zinc-800"
+          >
+            <LogOut className="w-4 h-4" />
+          </button>
         </header>
 
         {/* Main Content */}
