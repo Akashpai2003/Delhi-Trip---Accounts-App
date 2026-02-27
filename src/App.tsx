@@ -174,31 +174,47 @@ export default function App() {
   });
 
   const fetchData = async () => {
-    try {
-      const res = await fetch("/api/data", { headers: getHeaders() });
-      if (res.status === 401) {
-        handleLogout();
-        return;
-      }
-      const data = await res.json();
+  try {
+    const token = localStorage.getItem("token");
 
-      if (data.finances) {
-        setTotalBudget(data.finances.totalBudget || 0);
-        setPlatinumTicket(data.finances.platinumTicket || 0);
-        setPendingPlatinum(data.finances.pendingPlatinum || 0);
-        setFlightTotal(data.finances.flightTotal || 0);
-        setMyFlightShare(data.finances.myFlightShare || 0);
-        setStay(data.finances.stay || 0);
-        setExpectedIncoming(data.finances.expectedIncoming || 0);
-        setBaseSavings(data.finances.baseSavings || 0);
-      }
-      if (data.expenses) setExpenses(data.expenses);
-      if (data.incomes) setIncomes(data.incomes);
-      if (data.places) setPlaces(data.places);
-    } catch (err) {
-      console.error("Failed to fetch data", err);
+    if (!token) {
+      handleLogout();
+      return;
     }
-  };
+
+    const res = await fetch("/api/data", {
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    if (res.status === 401) {
+      handleLogout();
+      return;
+    }
+
+    const data = await res.json();
+
+    if (data.finances) {
+      setTotalBudget(data.finances.totalBudget || 0);
+      setPlatinumTicket(data.finances.platinumTicket || 0);
+      setPendingPlatinum(data.finances.pendingPlatinum || 0);
+      setFlightTotal(data.finances.flightTotal || 0);
+      setMyFlightShare(data.finances.myFlightShare || 0);
+      setStay(data.finances.stay || 0);
+      setExpectedIncoming(data.finances.expectedIncoming || 0);
+      setBaseSavings(data.finances.baseSavings || 0);
+    }
+
+    if (data.expenses) setExpenses(data.expenses);
+    if (data.incomes) setIncomes(data.incomes);
+    if (data.places) setPlaces(data.places);
+
+  } catch (err) {
+    console.error("Failed to fetch data", err);
+  }
+};
 
   const saveFinances = async () => {
     try {
