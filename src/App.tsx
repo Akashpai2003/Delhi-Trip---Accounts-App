@@ -109,9 +109,40 @@ const formatCurrency = (amount: number) => {
   }).format(amount || 0);
 };
 
+const Modal = ({ children, onClose, title }: any) => (
+  <>
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      onClick={onClose}
+      className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40"
+    />
+    <motion.div
+      initial={{ y: "100%" }}
+      animate={{ y: 0 }}
+      exit={{ y: "100%" }}
+      transition={{ type: "spring", damping: 25, stiffness: 200 }}
+      className="fixed bottom-0 left-0 right-0 bg-zinc-900 rounded-t-[2.5rem] z-50 p-6 border-t border-zinc-800 max-w-md mx-auto"
+    >
+      <div className="w-12 h-1.5 bg-zinc-800 rounded-full mx-auto mb-6" />
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-xl font-semibold text-zinc-100">{title}</h2>
+        <button
+          onClick={onClose}
+          className="p-2 bg-zinc-800 rounded-full text-zinc-400 hover:text-zinc-100"
+        >
+          <X className="w-5 h-5" />
+        </button>
+      </div>
+      {children}
+    </motion.div>
+  </>
+);
+
 export default function App() {
   // --- App State ---
-  const [appState, setAppState] = useState<"splash" | "auth" | "main">(
+  const [appState, setAppState] = useState<"splash" | "auth" | "trips" | "main">(
     "splash",
   );
   const [token, setToken] = useState<string | null>(
@@ -126,6 +157,14 @@ export default function App() {
   const [authUsername, setAuthUsername] = useState("");
   const [authPassword, setAuthPassword] = useState("");
   const [authError, setAuthError] = useState("");
+
+  // --- Trips State ---
+  const [trips, setTrips] = useState<any[]>([]);
+  const [activeTripId, setActiveTripId] = useState<string | null>(null);
+  const [isAddTripOpen, setIsAddTripOpen] = useState(false);
+  const [newTripName, setNewTripName] = useState("");
+  const [isLoadingTrips, setIsLoadingTrips] = useState(false);
+  const [tripsError, setTripsError] = useState<string | null>(null);
 
   // --- Main State ---
   const [activeTab, setActiveTab] = useState<Tab>("dashboard");
@@ -158,8 +197,8 @@ export default function App() {
     // Splash screen timer
     const timer = setTimeout(() => {
       if (token) {
-        setAppState("main");
-        fetchData();
+        setAppState("trips");
+        fetchTrips();
       } else {
         setAppState("auth");
       }
@@ -167,7 +206,7 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [token]);
 
-  // --- API Calls ---
+ // --- API Calls ---
   const getHeaders = () => ({
     "Content-Type": "application/json",
     Authorization: `Bearer ${token}`,
@@ -194,31 +233,80 @@ export default function App() {
       return;
     }
 
-    const data = await res.json();
-
-    if (data.finances) {
-      setTotalBudget(data.finances.totalBudget || 0);
-      setPlatinumTicket(data.finances.platinumTicket || 0);
-      setPendingPlatinum(data.finances.pendingPlatinum || 0);
-      setFlightTotal(data.finances.flightTotal || 0);
-      setMyFlightShare(data.finances.myFlightShare || 0);
-      setStay(data.finances.stay || 0);
-      setExpectedIncoming(data.finances.expectedIncoming || 0);
-      setBaseSavings(data.finances.baseSavings || 0);
+  const handleCreateTrip = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newTripName) return;
+    try {
+      const id = Date.now().toString();
+      await fetch("/api/trips", {
+        method: "POST",
+        headers: getHeaders(),
+        body: JSON.stringify({ id, name: newTripName }),
+      });
+      setIsAddTripOpen(false);
+      setNewTripName("");
+      fetchTrips();
+    } catch (err) {
+      console.error("Failed to create trip", err);
     }
+  };
 
-    if (data.expenses) setExpenses(data.expenses);
-    if (data.incomes) setIncomes(data.incomes);
-    if (data.places) setPlaces(data.places);
+  const fetchData = async (tripId: string) => {
+    try {
+      const currentToken = localStorage.getItem("token");
 
-  } catch (err) {
-    console.error("Failed to fetch data", err);
-  }
-};
+      if (!currentToken) {
+        handleLogout();
+        return;
+      }
+
+      const res = await fetch(`/api/data/${tripId}`, {
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${currentToken}`,
+        },
+      });
+
+      if (res.status === 401) {
+        handleLogout();
+        return;
+      }
+
+      const data = await res.json();
+
+      if (data.finances) {
+        setTotalBudget(data.finances.totalBudget || 0);
+        setPlatinumTicket(data.finances.platinumTicket || 0);
+        setPendingPlatinum(data.finances.pendingPlatinum || 0);
+        setFlightTotal(data.finances.flightTotal || 0);
+        setMyFlightShare(data.finances.myFlightShare || 0);
+        setStay(data.finances.stay || 0);
+        setExpectedIncoming(data.finances.expectedIncoming || 0);
+        setBaseSavings(data.finances.baseSavings || 0);
+      } else {
+        setTotalBudget(0);
+        setPlatinumTicket(0);
+        setPendingPlatinum(0);
+        setFlightTotal(0);
+        setMyFlightShare(0);
+        setStay(0);
+        setExpectedIncoming(0);
+        setBaseSavings(0);
+      }
+
+      if (data.expenses) setExpenses(data.expenses);
+      if (data.incomes) setIncomes(data.incomes);
+      if (data.places) setPlaces(data.places);
+
+    } catch (err) {
+      console.error("Failed to fetch data", err);
+    }
+  };
 
   const saveFinances = async () => {
+    if (!activeTripId) return;
     try {
-      await fetch("/api/finances", {
+      await fetch(`/api/finances/${activeTripId}`, {
         method: "POST",
         headers: getHeaders(),
         body: JSON.stringify({
@@ -262,8 +350,8 @@ export default function App() {
       localStorage.setItem("username", data.username);
       setToken(data.token);
       setUsername(data.username);
-      setAppState("main");
-      fetchData();
+      setAppState("trips");
+      fetchTrips(data.token);
     } catch (err: any) {
       setAuthError(err.message);
     }
@@ -401,6 +489,112 @@ export default function App() {
                 : "Already have an account? Sign in"}
             </button>
           </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (appState === "trips") {
+    return (
+      <div className="min-h-screen bg-zinc-950 text-zinc-50 font-sans selection:bg-indigo-500/30 dark">
+        <div className="max-w-md mx-auto min-h-screen relative flex flex-col">
+          <header className="px-6 pt-12 pb-6 flex items-center justify-between z-10 sticky top-0 bg-zinc-950/80 backdrop-blur-xl border-b border-zinc-900/50">
+            <div>
+              <h1 className="text-2xl font-semibold tracking-tight">Your Trips</h1>
+              <p className="text-sm text-zinc-500 mt-0.5">Welcome, {username}</p>
+            </div>
+            <button
+              onClick={handleLogout}
+              className="w-10 h-10 rounded-full bg-zinc-900 flex items-center justify-center text-zinc-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors border border-zinc-800"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          </header>
+
+          <main className="flex-1 px-6 pt-6 overflow-y-auto no-scrollbar pb-24 space-y-4">
+            {isLoadingTrips ? (
+              <div className="text-center py-12">
+                <div className="w-16 h-16 bg-zinc-900 rounded-full flex items-center justify-center mx-auto mb-4 border border-zinc-800 animate-pulse">
+                  <Compass className="w-8 h-8 text-zinc-500 animate-spin" />
+                </div>
+                <h3 className="text-lg font-medium text-zinc-300">Loading trips...</h3>
+              </div>
+            ) : tripsError ? (
+              <div className="text-center py-12">
+                <div className="w-16 h-16 bg-rose-500/10 rounded-full flex items-center justify-center mx-auto mb-4 border border-rose-500/20">
+                  <X className="w-8 h-8 text-rose-400" />
+                </div>
+                <h3 className="text-lg font-medium text-zinc-300">Failed to load trips</h3>
+                <p className="text-sm text-zinc-500 mt-1 mb-4">{tripsError}</p>
+                <button
+                  onClick={() => fetchTrips()}
+                  className="bg-zinc-800 hover:bg-zinc-700 text-zinc-100 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                >
+                  Try Again
+                </button>
+              </div>
+            ) : trips.length === 0 ? (
+              <div className="text-center py-12">
+                <div className="w-16 h-16 bg-zinc-900 rounded-full flex items-center justify-center mx-auto mb-4 border border-zinc-800">
+                  <MapIcon className="w-8 h-8 text-zinc-500" />
+                </div>
+                <h3 className="text-lg font-medium text-zinc-300">No trips yet</h3>
+                <p className="text-sm text-zinc-500 mt-1">Create your first trip to get started.</p>
+              </div>
+            ) : (
+              trips.map((trip) => (
+                <button
+                  key={trip.id}
+                  onClick={() => {
+                    setActiveTripId(trip.id);
+                    setAppState("main");
+                    fetchData(trip.id);
+                  }}
+                  className="w-full bg-zinc-900/50 hover:bg-zinc-900/80 backdrop-blur-md border border-zinc-800/50 rounded-3xl p-6 text-left transition-all flex items-center justify-between group"
+                >
+                  <div>
+                    <h3 className="text-xl font-semibold text-zinc-100 group-hover:text-indigo-400 transition-colors">{trip.name}</h3>
+                    <p className="text-sm text-zinc-500 mt-1">Tap to view details</p>
+                  </div>
+                  <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center group-hover:bg-indigo-500/20 transition-colors">
+                    <ArrowUpRight className="w-5 h-5 text-zinc-400 group-hover:text-indigo-400" />
+                  </div>
+                </button>
+              ))
+            )}
+          </main>
+
+          <div className="fixed bottom-0 left-0 right-0 max-w-md mx-auto p-6 bg-gradient-to-t from-zinc-950 via-zinc-950/90 to-transparent">
+            <button
+              onClick={() => setIsAddTripOpen(true)}
+              className="w-full bg-indigo-500 hover:bg-indigo-600 text-white py-4 rounded-2xl font-semibold transition-colors flex items-center justify-center gap-2 shadow-lg shadow-indigo-500/20"
+            >
+              <Plus className="w-5 h-5" /> Create New Trip
+            </button>
+          </div>
+
+          <AnimatePresence>
+            {isAddTripOpen && (
+              <Modal onClose={() => setIsAddTripOpen(false)} title="New Trip">
+                <form onSubmit={handleCreateTrip} className="space-y-4">
+                  <input
+                    type="text"
+                    required
+                    value={newTripName}
+                    onChange={(e) => setNewTripName(e.target.value)}
+                    placeholder="e.g. Goa 2024, Euro Trip"
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-2xl px-4 py-4 text-zinc-100 focus:outline-none focus:border-indigo-500"
+                  />
+                  <button
+                    type="submit"
+                    className="w-full bg-indigo-500 text-white py-4 rounded-2xl font-semibold mt-2"
+                  >
+                    Create Trip
+                  </button>
+                </form>
+              </Modal>
+            )}
+          </AnimatePresence>
         </div>
       </div>
     );
@@ -583,7 +777,9 @@ export default function App() {
       <span className="text-sm text-zinc-400">{label}</span>
       {isEditing ? (
         <input
-          type="number"
+          type="text"
+          inputMode="numeric"
+          pattern="[0-9]*"
           value={value}
           onChange={(e) => setter(Number(e.target.value))}
           className="w-24 bg-zinc-950 border border-zinc-700 rounded-lg px-2 py-1 text-right text-sm text-zinc-100 focus:outline-none focus:border-indigo-500"
@@ -632,7 +828,7 @@ export default function App() {
       };
 
       try {
-        await fetch("/api/expenses", {
+        await fetch(`/api/expenses/${activeTripId}`, {
           method: "POST",
           headers: getHeaders(),
           body: JSON.stringify(newExp),
@@ -663,7 +859,7 @@ export default function App() {
       };
 
       try {
-        await fetch("/api/incomes", {
+        await fetch(`/api/incomes/${activeTripId}`, {
           method: "POST",
           headers: getHeaders(),
           body: JSON.stringify(newInc),
@@ -832,7 +1028,9 @@ export default function App() {
                 </div>
 
                 <input
-                  type="number"
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
                   required
                   value={newExpAmount}
                   onChange={(e) => setNewExpAmount(e.target.value)}
@@ -895,7 +1093,9 @@ export default function App() {
                 </div>
 
                 <input
-                  type="number"
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
                   required
                   value={newIncAmount}
                   onChange={(e) => setNewIncAmount(e.target.value)}
@@ -1088,7 +1288,7 @@ export default function App() {
       };
 
       try {
-        await fetch("/api/places", {
+        await fetch(`/api/places/${activeTripId}`, {
           method: "POST",
           headers: getHeaders(),
           body: JSON.stringify(newPlace),
@@ -1154,6 +1354,11 @@ export default function App() {
               title="Street Food"
               subtitle="Under ₹300"
               items={streetFood}
+              suggestions={["Paranthe Wali Gali", "Natraj Dahi Bhalle", "Dolma Aunty Momos", "Karim's"]}
+              onAddSuggestion={(title: string) => {
+                setNewPlaceTitle(title);
+                setNewPlaceCat("Street Food");
+              }}
             />
             <GuideCard
               title="Casual Dining"
@@ -1189,7 +1394,7 @@ export default function App() {
     );
   };
 
-  const GuideCard = ({ title, subtitle, items }: any) => (
+  const GuideCard = ({ title, subtitle, items, suggestions, onAddSuggestion }: any) => (
     <div className="bg-zinc-900/40 backdrop-blur-md border border-zinc-800/50 rounded-2xl p-4">
       <div className="flex justify-between items-center mb-3">
         <h4 className="font-medium text-zinc-100">{title}</h4>
@@ -1200,7 +1405,7 @@ export default function App() {
       {items.length === 0 ? (
         <p className="text-sm text-zinc-500 italic">No places added yet.</p>
       ) : (
-        <ul className="space-y-2">
+        <ul className="space-y-2 mb-4">
           {items.map((item: Place) => (
             <li
               key={item.id}
@@ -1212,38 +1417,24 @@ export default function App() {
           ))}
         </ul>
       )}
-    </div>
-  );
-
-  const Modal = ({ children, onClose, title }: any) => (
-    <>
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        onClick={onClose}
-        className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40"
-      />
-      <motion.div
-        initial={{ y: "100%" }}
-        animate={{ y: 0 }}
-        exit={{ y: "100%" }}
-        transition={{ type: "spring", damping: 25, stiffness: 200 }}
-        className="fixed bottom-0 left-0 right-0 bg-zinc-900 rounded-t-[2.5rem] z-50 p-6 border-t border-zinc-800 max-w-md mx-auto"
-      >
-        <div className="w-12 h-1.5 bg-zinc-800 rounded-full mx-auto mb-6" />
-        <div className="flex justify-between items-center mb-6">
-          <h2 className="text-xl font-semibold text-zinc-100">{title}</h2>
-          <button
-            onClick={onClose}
-            className="p-2 bg-zinc-800 rounded-full text-zinc-400 hover:text-zinc-100"
-          >
-            <X className="w-5 h-5" />
-          </button>
+      
+      {suggestions && suggestions.length > 0 && (
+        <div className="mt-4 pt-4 border-t border-zinc-800/50">
+          <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-2">Suggestions</p>
+          <div className="flex flex-wrap gap-2">
+            {suggestions.map((s: string) => (
+              <button
+                key={s}
+                onClick={() => onAddSuggestion && onAddSuggestion(s)}
+                className="text-[10px] px-2 py-1 rounded bg-zinc-800 text-zinc-400 hover:bg-indigo-500/20 hover:text-indigo-400 transition-colors flex items-center gap-1"
+              >
+                <Plus className="w-3 h-3" /> {s}
+              </button>
+            ))}
+          </div>
         </div>
-        {children}
-      </motion.div>
-    </>
+      )}
+    </div>
   );
 
   return (
@@ -1252,10 +1443,20 @@ export default function App() {
         {/* Header */}
         <header className="px-6 pt-12 pb-6 flex items-center justify-between z-10 sticky top-0 bg-zinc-950/80 backdrop-blur-xl border-b border-zinc-900/50">
           <div>
+            <div className="flex items-center gap-2 mb-0.5">
+              <button 
+                onClick={() => {
+                  setAppState("trips");
+                  setActiveTripId(null);
+                }}
+                className="text-zinc-500 hover:text-zinc-300 flex items-center gap-1 text-sm font-medium"
+              >
+                ← Back to Trips
+              </button>
+            </div>
             <h1 className="text-2xl font-semibold tracking-tight">
-              WanderSync
+              {trips.find(t => t.id === activeTripId)?.name || "WanderSync"}
             </h1>
-            <p className="text-sm text-zinc-500 mt-0.5">Welcome, {username}</p>
           </div>
           <button
             onClick={handleLogout}
