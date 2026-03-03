@@ -142,9 +142,7 @@ const Modal = ({ children, onClose, title }: any) => (
 
 export default function App() {
   // --- App State ---
-  const [appState, setAppState] = useState<"splash" | "auth" | "trips" | "main">(
-    "splash",
-  );
+  const [appState, setAppState] = useState<"splash" | "auth" | "main">("splash");
   const [token, setToken] = useState<string | null>(
     localStorage.getItem("token"),
   );
@@ -157,14 +155,6 @@ export default function App() {
   const [authUsername, setAuthUsername] = useState("");
   const [authPassword, setAuthPassword] = useState("");
   const [authError, setAuthError] = useState("");
-
-  // --- Trips State ---
-  const [trips, setTrips] = useState<any[]>([]);
-  const [activeTripId, setActiveTripId] = useState<string | null>(null);
-  const [isAddTripOpen, setIsAddTripOpen] = useState(false);
-  const [newTripName, setNewTripName] = useState("");
-  const [isLoadingTrips, setIsLoadingTrips] = useState(false);
-  const [tripsError, setTripsError] = useState<string | null>(null);
 
   // --- Main State ---
   const [activeTab, setActiveTab] = useState<Tab>("dashboard");
@@ -197,8 +187,8 @@ export default function App() {
     // Splash screen timer
     const timer = setTimeout(() => {
       if (token) {
-        setAppState("trips");
-        fetchTrips();
+        setAppState("main");
+        fetchData();
       } else {
         setAppState("auth");
       }
@@ -206,52 +196,13 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [token]);
 
- // --- API Calls ---
+  // --- API Calls ---
   const getHeaders = () => ({
     "Content-Type": "application/json",
     Authorization: `Bearer ${token}`,
   });
 
   const fetchData = async () => {
-  try {
-    const token = localStorage.getItem("token");
-
-    if (!token) {
-      handleLogout();
-      return;
-    }
-
-    const res = await fetch("/api/data", {
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-    });
-
-    if (res.status === 401) {
-      handleLogout();
-      return;
-    }
-
-  const handleCreateTrip = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newTripName) return;
-    try {
-      const id = Date.now().toString();
-      await fetch("/api/trips", {
-        method: "POST",
-        headers: getHeaders(),
-        body: JSON.stringify({ id, name: newTripName }),
-      });
-      setIsAddTripOpen(false);
-      setNewTripName("");
-      fetchTrips();
-    } catch (err) {
-      console.error("Failed to create trip", err);
-    }
-  };
-
-  const fetchData = async (tripId: string) => {
     try {
       const currentToken = localStorage.getItem("token");
 
@@ -260,7 +211,7 @@ export default function App() {
         return;
       }
 
-      const res = await fetch(`/api/data/${tripId}`, {
+      const res = await fetch("/api/data", {
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${currentToken}`,
@@ -271,6 +222,8 @@ export default function App() {
         handleLogout();
         return;
       }
+
+      if (!res.ok) throw new Error("Failed to fetch data");
 
       const data = await res.json();
 
@@ -297,16 +250,14 @@ export default function App() {
       if (data.expenses) setExpenses(data.expenses);
       if (data.incomes) setIncomes(data.incomes);
       if (data.places) setPlaces(data.places);
-
     } catch (err) {
       console.error("Failed to fetch data", err);
     }
   };
 
   const saveFinances = async () => {
-    if (!activeTripId) return;
     try {
-      await fetch(`/api/finances/${activeTripId}`, {
+      await fetch("/api/finances", {
         method: "POST",
         headers: getHeaders(),
         body: JSON.stringify({
@@ -350,8 +301,8 @@ export default function App() {
       localStorage.setItem("username", data.username);
       setToken(data.token);
       setUsername(data.username);
-      setAppState("trips");
-      fetchTrips(data.token);
+      setAppState("main");
+      fetchData();
     } catch (err: any) {
       setAuthError(err.message);
     }
@@ -494,111 +445,7 @@ export default function App() {
     );
   }
 
-  if (appState === "trips") {
-    return (
-      <div className="min-h-screen bg-zinc-950 text-zinc-50 font-sans selection:bg-indigo-500/30 dark">
-        <div className="max-w-md mx-auto min-h-screen relative flex flex-col">
-          <header className="px-6 pt-12 pb-6 flex items-center justify-between z-10 sticky top-0 bg-zinc-950/80 backdrop-blur-xl border-b border-zinc-900/50">
-            <div>
-              <h1 className="text-2xl font-semibold tracking-tight">Your Trips</h1>
-              <p className="text-sm text-zinc-500 mt-0.5">Welcome, {username}</p>
-            </div>
-            <button
-              onClick={handleLogout}
-              className="w-10 h-10 rounded-full bg-zinc-900 flex items-center justify-center text-zinc-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors border border-zinc-800"
-            >
-              <LogOut className="w-4 h-4" />
-            </button>
-          </header>
 
-          <main className="flex-1 px-6 pt-6 overflow-y-auto no-scrollbar pb-24 space-y-4">
-            {isLoadingTrips ? (
-              <div className="text-center py-12">
-                <div className="w-16 h-16 bg-zinc-900 rounded-full flex items-center justify-center mx-auto mb-4 border border-zinc-800 animate-pulse">
-                  <Compass className="w-8 h-8 text-zinc-500 animate-spin" />
-                </div>
-                <h3 className="text-lg font-medium text-zinc-300">Loading trips...</h3>
-              </div>
-            ) : tripsError ? (
-              <div className="text-center py-12">
-                <div className="w-16 h-16 bg-rose-500/10 rounded-full flex items-center justify-center mx-auto mb-4 border border-rose-500/20">
-                  <X className="w-8 h-8 text-rose-400" />
-                </div>
-                <h3 className="text-lg font-medium text-zinc-300">Failed to load trips</h3>
-                <p className="text-sm text-zinc-500 mt-1 mb-4">{tripsError}</p>
-                <button
-                  onClick={() => fetchTrips()}
-                  className="bg-zinc-800 hover:bg-zinc-700 text-zinc-100 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-                >
-                  Try Again
-                </button>
-              </div>
-            ) : trips.length === 0 ? (
-              <div className="text-center py-12">
-                <div className="w-16 h-16 bg-zinc-900 rounded-full flex items-center justify-center mx-auto mb-4 border border-zinc-800">
-                  <MapIcon className="w-8 h-8 text-zinc-500" />
-                </div>
-                <h3 className="text-lg font-medium text-zinc-300">No trips yet</h3>
-                <p className="text-sm text-zinc-500 mt-1">Create your first trip to get started.</p>
-              </div>
-            ) : (
-              trips.map((trip) => (
-                <button
-                  key={trip.id}
-                  onClick={() => {
-                    setActiveTripId(trip.id);
-                    setAppState("main");
-                    fetchData(trip.id);
-                  }}
-                  className="w-full bg-zinc-900/50 hover:bg-zinc-900/80 backdrop-blur-md border border-zinc-800/50 rounded-3xl p-6 text-left transition-all flex items-center justify-between group"
-                >
-                  <div>
-                    <h3 className="text-xl font-semibold text-zinc-100 group-hover:text-indigo-400 transition-colors">{trip.name}</h3>
-                    <p className="text-sm text-zinc-500 mt-1">Tap to view details</p>
-                  </div>
-                  <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center group-hover:bg-indigo-500/20 transition-colors">
-                    <ArrowUpRight className="w-5 h-5 text-zinc-400 group-hover:text-indigo-400" />
-                  </div>
-                </button>
-              ))
-            )}
-          </main>
-
-          <div className="fixed bottom-0 left-0 right-0 max-w-md mx-auto p-6 bg-gradient-to-t from-zinc-950 via-zinc-950/90 to-transparent">
-            <button
-              onClick={() => setIsAddTripOpen(true)}
-              className="w-full bg-indigo-500 hover:bg-indigo-600 text-white py-4 rounded-2xl font-semibold transition-colors flex items-center justify-center gap-2 shadow-lg shadow-indigo-500/20"
-            >
-              <Plus className="w-5 h-5" /> Create New Trip
-            </button>
-          </div>
-
-          <AnimatePresence>
-            {isAddTripOpen && (
-              <Modal onClose={() => setIsAddTripOpen(false)} title="New Trip">
-                <form onSubmit={handleCreateTrip} className="space-y-4">
-                  <input
-                    type="text"
-                    required
-                    value={newTripName}
-                    onChange={(e) => setNewTripName(e.target.value)}
-                    placeholder="e.g. Goa 2024, Euro Trip"
-                    className="w-full bg-zinc-950 border border-zinc-800 rounded-2xl px-4 py-4 text-zinc-100 focus:outline-none focus:border-indigo-500"
-                  />
-                  <button
-                    type="submit"
-                    className="w-full bg-indigo-500 text-white py-4 rounded-2xl font-semibold mt-2"
-                  >
-                    Create Trip
-                  </button>
-                </form>
-              </Modal>
-            )}
-          </AnimatePresence>
-        </div>
-      </div>
-    );
-  }
 
   const DashboardTab = () => (
     <div className="space-y-6 animate-in fade-in duration-500 pb-24">
@@ -828,7 +675,7 @@ export default function App() {
       };
 
       try {
-        await fetch(`/api/expenses/${activeTripId}`, {
+        await fetch("/api/expenses", {
           method: "POST",
           headers: getHeaders(),
           body: JSON.stringify(newExp),
@@ -859,7 +706,7 @@ export default function App() {
       };
 
       try {
-        await fetch(`/api/incomes/${activeTripId}`, {
+        await fetch("/api/incomes", {
           method: "POST",
           headers: getHeaders(),
           body: JSON.stringify(newInc),
@@ -1288,7 +1135,7 @@ export default function App() {
       };
 
       try {
-        await fetch(`/api/places/${activeTripId}`, {
+        await fetch("/api/places", {
           method: "POST",
           headers: getHeaders(),
           body: JSON.stringify(newPlace),
@@ -1443,20 +1290,10 @@ export default function App() {
         {/* Header */}
         <header className="px-6 pt-12 pb-6 flex items-center justify-between z-10 sticky top-0 bg-zinc-950/80 backdrop-blur-xl border-b border-zinc-900/50">
           <div>
-            <div className="flex items-center gap-2 mb-0.5">
-              <button 
-                onClick={() => {
-                  setAppState("trips");
-                  setActiveTripId(null);
-                }}
-                className="text-zinc-500 hover:text-zinc-300 flex items-center gap-1 text-sm font-medium"
-              >
-                ← Back to Trips
-              </button>
-            </div>
             <h1 className="text-2xl font-semibold tracking-tight">
-              {trips.find(t => t.id === activeTripId)?.name || "WanderSync"}
+              WanderSync
             </h1>
+            <p className="text-sm text-zinc-500 mt-0.5">Welcome, {username}</p>
           </div>
           <button
             onClick={handleLogout}

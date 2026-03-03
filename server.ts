@@ -68,7 +68,7 @@ db.exec(`
 const JWT_SECRET = process.env.JWT_SECRET || "super-secret-key";
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = Number(process.env.PORT) || 3000;
 
 app.use(cors());
 app.use(express.json());
@@ -172,6 +172,33 @@ app.post("/api/finances", authenticate, (req: any, res) => {
     req.userId,
   );
 
+  res.json({ success: true });
+});
+
+app.post("/api/expenses", authenticate, (req: any, res) => {
+  const { id, title, amount, category, accountId, date, time } = req.body;
+  const stmt = db.prepare(
+    "INSERT INTO expenses (id, user_id, title, amount, category, accountId, date, time) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+  );
+  stmt.run(id, req.userId, title, amount, category, accountId, date, time);
+  res.json({ success: true });
+});
+
+app.post("/api/incomes", authenticate, (req: any, res) => {
+  const { id, title, amount, category, accountId, date } = req.body;
+  const stmt = db.prepare(
+    "INSERT INTO incomes (id, user_id, title, amount, category, accountId, date) VALUES (?, ?, ?, ?, ?, ?, ?)",
+  );
+  stmt.run(id, req.userId, title, amount, category, accountId, date);
+  res.json({ success: true });
+});
+
+app.post("/api/places", authenticate, (req: any, res) => {
+  const { id, title, category } = req.body;
+  const stmt = db.prepare(
+    "INSERT INTO places (id, user_id, title, category) VALUES (?, ?, ?, ?)",
+  );
+  stmt.run(id, req.userId, title, category);
   res.json({ success: true });
 });
 
