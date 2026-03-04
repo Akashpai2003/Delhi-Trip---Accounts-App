@@ -25,6 +25,9 @@ import {
   Wallet,
   LogOut,
   Trash2,
+  Calendar,
+  ChevronRight,
+  RotateCcw,
 } from "lucide-react";
 
 // --- Types ---
@@ -46,8 +49,22 @@ type IncomeCategory =
 type AccountType = "trip" | "savings";
 type PlaceCategory = "Street Food" | "Casual Dining" | "Premium" | "Hotspot";
 
+interface Trip {
+  id: string;
+  name: string;
+  totalBudget: number;
+  platinumTicket?: number;
+  pendingPlatinum?: number;
+  flightTotal?: number;
+  myFlightShare?: number;
+  stay?: number;
+  expectedIncoming?: number;
+  baseSavings?: number;
+}
+
 interface Expense {
   id: string;
+  trip_id: string;
   title: string;
   amount: number;
   category: ExpenseCategory;
@@ -58,6 +75,7 @@ interface Expense {
 
 interface Income {
   id: string;
+  trip_id: string;
   title: string;
   amount: number;
   category: IncomeCategory;
@@ -67,6 +85,7 @@ interface Income {
 
 interface Place {
   id: string;
+  trip_id: string;
   title: string;
   category: PlaceCategory;
 }
@@ -77,22 +96,22 @@ const EXPENSE_CATEGORIES: {
   icon: any;
   color: string;
 }[] = [
-  { name: "Food", icon: Coffee, color: "text-orange-500 bg-orange-500/10" },
-  { name: "Alcohol", icon: Wine, color: "text-purple-500 bg-purple-500/10" },
-  { name: "Metro", icon: Train, color: "text-blue-500 bg-blue-500/10" },
-  { name: "Auto", icon: Navigation, color: "text-yellow-500 bg-yellow-500/10" },
-  { name: "Cab", icon: Car, color: "text-indigo-500 bg-indigo-500/10" },
+  { name: "Food", icon: Coffee, color: "text-orange-600 bg-orange-100" },
+  { name: "Alcohol", icon: Wine, color: "text-purple-600 bg-purple-100" },
+  { name: "Metro", icon: Train, color: "text-blue-600 bg-blue-100" },
+  { name: "Auto", icon: Navigation, color: "text-yellow-600 bg-yellow-100" },
+  { name: "Cab", icon: Car, color: "text-indigo-600 bg-indigo-100" },
   {
     name: "Attractions",
     icon: Ticket,
-    color: "text-emerald-500 bg-emerald-500/10",
+    color: "text-emerald-600 bg-emerald-100",
   },
   {
     name: "Shopping",
     icon: ShoppingBag,
-    color: "text-pink-500 bg-pink-500/10",
+    color: "text-pink-600 bg-pink-100",
   },
-  { name: "Misc", icon: MoreHorizontal, color: "text-zinc-500 bg-zinc-500/10" },
+  { name: "Misc", icon: MoreHorizontal, color: "text-gray-600 bg-gray-100" },
 ];
 
 const INCOME_CATEGORIES: IncomeCategory[] = [
@@ -124,7 +143,7 @@ const Modal = ({ children, onClose, title }: any) => (
       animate={{ y: 0 }}
       exit={{ y: "100%" }}
       transition={{ type: "spring", damping: 25, stiffness: 200 }}
-      className="fixed bottom-0 left-0 right-0 bg-zinc-900 rounded-t-[2.5rem] z-50 p-6 border-t border-zinc-800 max-w-md mx-auto"
+      className="fixed bottom-0 left-0 right-0 bg-zinc-900 rounded-t-[2.5rem] z-50 p-6 border-t border-zinc-800 max-w-md mx-auto shadow-2xl"
     >
       <div className="w-12 h-1.5 bg-zinc-800 rounded-full mx-auto mb-6" />
       <div className="flex justify-between items-center mb-6">
@@ -143,7 +162,7 @@ const Modal = ({ children, onClose, title }: any) => (
 
 export default function App() {
   // --- App State ---
-  const [appState, setAppState] = useState<"splash" | "auth" | "main">("splash");
+  const [appState, setAppState] = useState<"splash" | "auth" | "trip_selection" | "main">("splash");
   const [token, setToken] = useState<string | null>(
     localStorage.getItem("token"),
   );
@@ -156,6 +175,13 @@ export default function App() {
   const [authUsername, setAuthUsername] = useState("");
   const [authPassword, setAuthPassword] = useState("");
   const [authError, setAuthError] = useState("");
+
+  // --- Trip State ---
+  const [trips, setTrips] = useState<Trip[]>([]);
+  const [currentTrip, setCurrentTrip] = useState<Trip | null>(null);
+  const [isCreatingTrip, setIsCreatingTrip] = useState(false);
+  const [newTripName, setNewTripName] = useState("");
+  const [newTripBudget, setNewTripBudget] = useState("");
 
   // --- Main State ---
   const [activeTab, setActiveTab] = useState<Tab>("dashboard");
@@ -188,8 +214,7 @@ export default function App() {
     // Splash screen timer
     const timer = setTimeout(() => {
       if (token) {
-        setAppState("main");
-        fetchData();
+        fetchTrips();
       } else {
         setAppState("auth");
       }
@@ -203,62 +228,98 @@ export default function App() {
     Authorization: `Bearer ${token}`,
   });
 
-  const fetchData = async () => {
+  const fetchTrips = async () => {
     try {
-      const currentToken = localStorage.getItem("token");
-
-      if (!currentToken) {
-        handleLogout();
-        return;
-      }
-
-      const res = await fetch("/api/data", {
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${currentToken}`,
-        },
-      });
-
+      const res = await fetch("/api/trips", { headers: getHeaders() });
       if (res.status === 401) {
         handleLogout();
         return;
       }
-
-      if (!res.ok) throw new Error("Failed to fetch data");
-
+      if (!res.ok) throw new Error("Failed to fetch trips");
       const data = await res.json();
-
-      if (data.finances) {
-        setTotalBudget(data.finances.totalBudget || 0);
-        setPlatinumTicket(data.finances.platinumTicket || 0);
-        setPendingPlatinum(data.finances.pendingPlatinum || 0);
-        setFlightTotal(data.finances.flightTotal || 0);
-        setMyFlightShare(data.finances.myFlightShare || 0);
-        setStay(data.finances.stay || 0);
-        setExpectedIncoming(data.finances.expectedIncoming || 0);
-        setBaseSavings(data.finances.baseSavings || 0);
-      } else {
-        setTotalBudget(0);
-        setPlatinumTicket(0);
-        setPendingPlatinum(0);
-        setFlightTotal(0);
-        setMyFlightShare(0);
-        setStay(0);
-        setExpectedIncoming(0);
-        setBaseSavings(0);
-      }
-
-      if (data.expenses) setExpenses(data.expenses);
-      if (data.incomes) setIncomes(data.incomes);
-      if (data.places) setPlaces(data.places);
+      setTrips(data);
+      setAppState("trip_selection");
     } catch (err) {
-      console.error("Failed to fetch data", err);
+      console.error(err);
+    }
+  };
+
+  const createTrip = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newTripName) return;
+    try {
+      const newTrip = {
+        id: Date.now().toString(),
+        name: newTripName,
+        totalBudget: Number(newTripBudget) || 0,
+      };
+      await fetch("/api/trips", {
+        method: "POST",
+        headers: getHeaders(),
+        body: JSON.stringify(newTrip),
+      });
+      setTrips([...trips, newTrip]);
+      setIsCreatingTrip(false);
+      setNewTripName("");
+      setNewTripBudget("");
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const selectTrip = async (trip: Trip) => {
+    setCurrentTrip(trip);
+    try {
+      const res = await fetch(`/api/trips/${trip.id}/data`, { headers: getHeaders() });
+      if (!res.ok) throw new Error("Failed to fetch trip data");
+      const data = await res.json();
+      
+      const t = data.trip;
+      setTotalBudget(t.totalBudget || 0);
+      setPlatinumTicket(t.platinumTicket || 0);
+      setPendingPlatinum(t.pendingPlatinum || 0);
+      setFlightTotal(t.flightTotal || 0);
+      setMyFlightShare(t.myFlightShare || 0);
+      setStay(t.stay || 0);
+      setExpectedIncoming(t.expectedIncoming || 0);
+      setBaseSavings(t.baseSavings || 0);
+
+      setExpenses(data.expenses || []);
+      setIncomes(data.incomes || []);
+      setPlaces(data.places || []);
+      
+      setAppState("main");
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const deleteTrip = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!window.confirm("Are you sure you want to delete this trip?")) return;
+    try {
+      await fetch(`/api/trips/${id}`, { method: "DELETE", headers: getHeaders() });
+      setTrips(trips.filter(t => t.id !== id));
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const resetAllData = async () => {
+    if (!window.confirm("WARNING: This will delete ALL your trips and data. This action cannot be undone. Are you sure?")) return;
+    try {
+      await fetch("/api/reset", { method: "POST", headers: getHeaders() });
+      setTrips([]);
+      setAppState("trip_selection");
+    } catch (err) {
+      console.error(err);
     }
   };
 
   const saveFinances = async () => {
+    if (!currentTrip) return;
     try {
-      await fetch("/api/finances", {
+      await fetch(`/api/trips/${currentTrip.id}/finances`, {
         method: "POST",
         headers: getHeaders(),
         body: JSON.stringify({
@@ -302,8 +363,7 @@ export default function App() {
       localStorage.setItem("username", data.username);
       setToken(data.token);
       setUsername(data.username);
-      setAppState("main");
-      fetchData();
+      fetchTrips();
     } catch (err: any) {
       setAuthError(err.message);
     }
@@ -357,13 +417,13 @@ export default function App() {
           animate={{ opacity: 1, scale: 1 }}
           className="text-center"
         >
-          <div className="w-20 h-20 bg-indigo-500/20 rounded-3xl mx-auto flex items-center justify-center mb-6 border border-indigo-500/30">
-            <Compass className="w-10 h-10 text-indigo-400" />
+          <div className="w-20 h-20 bg-zinc-900 rounded-3xl mx-auto flex items-center justify-center mb-6 border border-zinc-800">
+            <Compass className="w-10 h-10 text-indigo-500" />
           </div>
           <h1 className="text-3xl font-bold text-zinc-100 tracking-tight">
-            WanderSync
+            TripExpense
           </h1>
-          <p className="text-zinc-500 mt-2 font-medium">
+          <p className="text-zinc-400 mt-2 font-medium">
             Your trip, perfectly planned.
           </p>
         </motion.div>
@@ -374,14 +434,14 @@ export default function App() {
   if (appState === "auth") {
     return (
       <div className="min-h-screen bg-zinc-950 flex items-center justify-center p-6">
-        <div className="w-full max-w-sm bg-zinc-900/50 backdrop-blur-md border border-zinc-800/50 rounded-3xl p-8 shadow-2xl">
-          <div className="w-12 h-12 bg-indigo-500/20 rounded-2xl flex items-center justify-center mb-6 border border-indigo-500/30">
-            <Compass className="w-6 h-6 text-indigo-400" />
+        <div className="w-full max-w-sm bg-zinc-900 border border-zinc-800 rounded-3xl p-8 shadow-xl">
+          <div className="w-12 h-12 bg-zinc-800 rounded-2xl flex items-center justify-center mb-6 border border-zinc-700">
+            <Compass className="w-6 h-6 text-indigo-500" />
           </div>
           <h2 className="text-2xl font-bold text-zinc-100 mb-2">
             {authMode === "login" ? "Welcome back" : "Create account"}
           </h2>
-          <p className="text-zinc-500 text-sm mb-8">
+          <p className="text-zinc-400 text-sm mb-8">
             {authMode === "login"
               ? "Enter your details to access your trip."
               : "Start planning your next adventure."}
@@ -395,7 +455,7 @@ export default function App() {
             )}
 
             <div>
-              <label className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-1.5 block">
+              <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-1.5 block">
                 Username
               </label>
               <input
@@ -408,7 +468,7 @@ export default function App() {
               />
             </div>
             <div>
-              <label className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-1.5 block">
+              <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-1.5 block">
                 Password
               </label>
               <input
@@ -422,7 +482,7 @@ export default function App() {
             </div>
             <button
               type="submit"
-              className="w-full bg-indigo-500 hover:bg-indigo-600 text-white py-3.5 rounded-xl font-semibold transition-colors mt-2"
+              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-3.5 rounded-xl font-semibold transition-colors mt-2"
             >
               {authMode === "login" ? "Sign In" : "Sign Up"}
             </button>
@@ -434,7 +494,7 @@ export default function App() {
                 setAuthMode(authMode === "login" ? "register" : "login");
                 setAuthError("");
               }}
-              className="text-sm text-zinc-400 hover:text-zinc-300"
+              className="text-sm text-zinc-500 hover:text-zinc-300"
             >
               {authMode === "login"
                 ? "Don't have an account? Sign up"
@@ -446,38 +506,126 @@ export default function App() {
     );
   }
 
+  if (appState === "trip_selection") {
+    return (
+      <div className="min-h-screen bg-zinc-950 p-6">
+        <div className="max-w-md mx-auto">
+          <header className="flex justify-between items-center mb-8 pt-8">
+            <div>
+              <h1 className="text-2xl font-bold text-zinc-100">Your Trips</h1>
+              <p className="text-zinc-400 text-sm">Select a trip to manage</p>
+            </div>
+            <button
+              onClick={handleLogout}
+              className="p-2 bg-zinc-900 rounded-full text-zinc-400 hover:text-rose-500 shadow-sm border border-zinc-800"
+            >
+              <LogOut className="w-5 h-5" />
+            </button>
+          </header>
 
+          <div className="space-y-4">
+            {trips.map((trip) => (
+              <motion.div
+                key={trip.id}
+                whileTap={{ scale: 0.98 }}
+                onClick={() => selectTrip(trip)}
+                className="bg-zinc-900/50 p-5 rounded-2xl shadow-sm border border-zinc-800/50 flex justify-between items-center cursor-pointer group"
+              >
+                <div>
+                  <h3 className="font-semibold text-zinc-100 text-lg">{trip.name}</h3>
+                  <p className="text-zinc-400 text-sm">Budget: {formatCurrency(trip.totalBudget)}</p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={(e) => deleteTrip(trip.id, e)}
+                    className="p-2 text-zinc-500 hover:text-rose-500 transition-colors"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                  <ChevronRight className="w-5 h-5 text-zinc-600" />
+                </div>
+              </motion.div>
+            ))}
 
+            <motion.button
+              whileTap={{ scale: 0.98 }}
+              onClick={() => setIsCreatingTrip(true)}
+              className="w-full py-4 border-2 border-dashed border-zinc-800 rounded-2xl text-zinc-500 font-medium flex items-center justify-center gap-2 hover:border-indigo-500/50 hover:text-indigo-400 transition-colors"
+            >
+              <Plus className="w-5 h-5" /> Create New Trip
+            </motion.button>
+          </div>
 
+          <div className="mt-12 pt-6 border-t border-zinc-800/50">
+             <button
+              onClick={resetAllData}
+              className="w-full py-3 text-rose-500/80 text-sm font-medium flex items-center justify-center gap-2 hover:bg-rose-500/10 rounded-xl transition-colors"
+            >
+              <RotateCcw className="w-4 h-4" /> Reset All Data
+            </button>
+          </div>
+        </div>
 
-
-
-
-
-
-
-
-
-
-
-
+        <AnimatePresence>
+          {isCreatingTrip && (
+            <Modal title="New Trip" onClose={() => setIsCreatingTrip(false)}>
+              <form onSubmit={createTrip} className="space-y-4">
+                <div>
+                  <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-1.5 block">
+                    Trip Name
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={newTripName}
+                    onChange={(e) => setNewTripName(e.target.value)}
+                    placeholder="e.g. Summer Vacation"
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-zinc-100 focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-1.5 block">
+                    Total Budget
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    value={newTripBudget}
+                    onChange={(e) => setNewTripBudget(e.target.value)}
+                    placeholder="0"
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-zinc-100 focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-3.5 rounded-xl font-semibold transition-colors"
+                >
+                  Create Trip
+                </button>
+              </form>
+            </Modal>
+          )}
+        </AnimatePresence>
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-50 font-sans selection:bg-indigo-500/30 dark">
+    <div className="min-h-screen bg-zinc-950 text-zinc-100 font-sans selection:bg-indigo-500/30">
       <div className="max-w-md mx-auto min-h-screen relative flex flex-col">
         {/* Header */}
-        <header className="px-6 pt-12 pb-6 flex items-center justify-between z-10 sticky top-0 bg-zinc-950/80 backdrop-blur-xl border-b border-zinc-900/50">
+        <header className="px-6 pt-12 pb-6 flex items-center justify-between z-10 sticky top-0 bg-zinc-950/80 backdrop-blur-xl border-b border-zinc-800/50">
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight">
-              WanderSync
+            <h1 className="text-2xl font-bold tracking-tight text-zinc-100">
+              {currentTrip?.name || "TripExpense"}
             </h1>
-            <p className="text-sm text-zinc-500 mt-0.5">Welcome, {username}</p>
+            <p className="text-sm text-zinc-500 mt-0.5">Overview</p>
           </div>
           <button
-            onClick={handleLogout}
-            className="w-10 h-10 rounded-full bg-zinc-900 flex items-center justify-center text-zinc-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors border border-zinc-800"
+            onClick={() => setAppState("trip_selection")}
+            className="px-3 py-1.5 rounded-full bg-zinc-900 border border-zinc-800 text-xs font-medium text-zinc-400 hover:bg-zinc-800 transition-colors"
           >
-            <LogOut className="w-4 h-4" />
+            Switch Trip
           </button>
         </header>
 
@@ -524,6 +672,7 @@ export default function App() {
               isAddIncomeOpen={isAddIncomeOpen}
               setIsAddIncomeOpen={setIsAddIncomeOpen}
               getHeaders={getHeaders}
+              tripId={currentTrip?.id}
             />
           )}
           {activeTab === "planner" && (
@@ -534,12 +683,13 @@ export default function App() {
               places={places}
               setPlaces={setPlaces}
               getHeaders={getHeaders}
+              tripId={currentTrip?.id}
             />
           )}
         </main>
 
         {/* Bottom Navigation */}
-        <nav className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-zinc-950/90 backdrop-blur-xl border-t border-zinc-900/50 pb-safe pt-2 px-6 z-30">
+        <nav className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-zinc-950/90 backdrop-blur-xl border-t border-zinc-800/50 pb-safe pt-2 px-6 z-30">
           <div className="flex justify-between items-center pb-4">
             <NavButton
               icon={LayoutDashboard}
@@ -575,10 +725,10 @@ export default function App() {
 const NavButton = ({ icon: Icon, label, isActive, onClick }: any) => (
   <button
     onClick={onClick}
-    className={`flex flex-col items-center gap-1.5 p-2 transition-colors ${isActive ? "text-zinc-100" : "text-zinc-600 hover:text-zinc-400"}`}
+    className={`flex flex-col items-center gap-1.5 p-2 transition-colors ${isActive ? "text-indigo-400" : "text-zinc-500 hover:text-zinc-300"}`}
   >
     <div
-      className={`relative p-1.5 rounded-xl transition-all ${isActive ? "bg-zinc-800 text-zinc-100" : "bg-transparent"}`}
+      className={`relative p-1.5 rounded-xl transition-all ${isActive ? "bg-indigo-500/10 text-indigo-400" : "bg-transparent"}`}
     >
       <Icon className="w-5 h-5" />
     </div>
@@ -594,7 +744,7 @@ const FixedItem = ({
   className = "text-zinc-100",
 }: any) => (
   <div className="flex justify-between items-center">
-    <span className="text-sm text-zinc-400">{label}</span>
+    <span className="text-sm text-zinc-500">{label}</span>
     {isEditing ? (
       <input
         type="text"
@@ -602,7 +752,7 @@ const FixedItem = ({
         pattern="[0-9]*"
         value={value}
         onChange={(e) => setter(Number(e.target.value))}
-        className="w-24 bg-zinc-950 border border-zinc-700 rounded-lg px-2 py-1 text-right text-sm text-zinc-100 focus:outline-none focus:border-indigo-500"
+        className="w-24 bg-zinc-900 border border-zinc-800 rounded-lg px-2 py-1 text-right text-sm text-zinc-100 focus:outline-none focus:border-indigo-500"
       />
     ) : (
       <span className={`text-sm font-medium ${className}`}>
@@ -615,7 +765,7 @@ const FixedItem = ({
 const AllocationSlider = ({ label, pct, setPct, amount, color }: any) => (
   <div>
     <div className="flex justify-between text-sm mb-2">
-      <span className="text-zinc-300">{label}</span>
+      <span className="text-zinc-500">{label}</span>
       <span className="text-zinc-100 font-medium">
         {formatCurrency(amount)}
       </span>
@@ -626,15 +776,15 @@ const AllocationSlider = ({ label, pct, setPct, amount, color }: any) => (
       max="100"
       value={pct}
       onChange={(e) => setPct(Number(e.target.value))}
-      className={`w-full h-2 rounded-full appearance-none bg-zinc-800 accent-zinc-100`}
+      className={`w-full h-2 rounded-full appearance-none bg-zinc-800 accent-indigo-500`}
     />
   </div>
 );
 
 const RideEstimator = ({ icon: Icon, label, count, setCount }: any) => (
-  <div className="flex items-center justify-between bg-zinc-950/50 p-3 rounded-2xl border border-zinc-800/50">
+  <div className="flex items-center justify-between bg-zinc-900/50 p-3 rounded-2xl border border-zinc-800/50 shadow-sm">
     <div className="flex items-center gap-3">
-      <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center text-zinc-400">
+      <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center text-zinc-500">
         <Icon className="w-4 h-4" />
       </div>
       <span className="text-sm text-zinc-300">{label}</span>
@@ -642,14 +792,14 @@ const RideEstimator = ({ icon: Icon, label, count, setCount }: any) => (
     <div className="flex items-center gap-3">
       <button
         onClick={() => setCount(Math.max(0, count - 1))}
-        className="w-8 h-8 rounded-full bg-zinc-800 text-zinc-400 flex items-center justify-center"
+        className="w-8 h-8 rounded-full bg-zinc-800 text-zinc-500 flex items-center justify-center hover:bg-zinc-700"
       >
         -
       </button>
-      <span className="w-4 text-center text-sm font-medium">{count}</span>
+      <span className="w-4 text-center text-sm font-medium text-zinc-100">{count}</span>
       <button
         onClick={() => setCount(count + 1)}
-        className="w-8 h-8 rounded-full bg-zinc-800 text-zinc-400 flex items-center justify-center"
+        className="w-8 h-8 rounded-full bg-zinc-800 text-zinc-500 flex items-center justify-center hover:bg-zinc-700"
       >
         +
       </button>
@@ -658,7 +808,7 @@ const RideEstimator = ({ icon: Icon, label, count, setCount }: any) => (
 );
 
 const GuideCard = ({ title, subtitle, items, suggestions, onAddSuggestion, onDelete }: any) => (
-  <div className="bg-zinc-900/40 backdrop-blur-md border border-zinc-800/50 rounded-2xl p-4">
+  <div className="bg-zinc-900/50 border border-zinc-800/50 rounded-2xl p-4 shadow-sm">
     <div className="flex justify-between items-center mb-3">
       <h4 className="font-medium text-zinc-100">{title}</h4>
       <span className="text-xs font-semibold text-zinc-500 bg-zinc-800 px-2 py-1 rounded-md">
@@ -672,7 +822,7 @@ const GuideCard = ({ title, subtitle, items, suggestions, onAddSuggestion, onDel
         {items.map((item: Place) => (
           <li
             key={item.id}
-            className="text-sm text-zinc-300 flex items-center justify-between group"
+            className="text-sm text-zinc-400 flex items-center justify-between group"
           >
             <div className="flex items-center gap-2">
               <div className="w-1.5 h-1.5 rounded-full bg-zinc-700" />
@@ -681,7 +831,7 @@ const GuideCard = ({ title, subtitle, items, suggestions, onAddSuggestion, onDel
             {onDelete && (
               <button
                 onClick={() => onDelete(item.id)}
-                className="text-zinc-500 hover:text-rose-400 transition-colors opacity-0 group-hover:opacity-100 p-1"
+                className="text-zinc-600 hover:text-rose-500 transition-colors p-1"
               >
                 <Trash2 className="w-3 h-3" />
               </button>
@@ -693,7 +843,7 @@ const GuideCard = ({ title, subtitle, items, suggestions, onAddSuggestion, onDel
     
     {suggestions && suggestions.length > 0 && (
       <div className="mt-4 pt-4 border-t border-zinc-800/50">
-        <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-2">Suggestions</p>
+        <p className="text-xs font-semibold text-zinc-600 uppercase tracking-wider mb-2">Suggestions</p>
         <div className="flex flex-wrap gap-2">
           {suggestions.map((s: string) => (
             <button
@@ -800,7 +950,7 @@ const PlannerTab = ({ safeDailySpend }: any) => {
   );
 };
 
-const ExploreTab = ({ places, setPlaces, getHeaders }: any) => {
+const ExploreTab = ({ places, setPlaces, getHeaders, tripId }: any) => {
   const [newPlaceTitle, setNewPlaceTitle] = useState("");
   const [newPlaceCat, setNewPlaceCat] = useState<PlaceCategory>("Street Food");
 
@@ -812,6 +962,7 @@ const ExploreTab = ({ places, setPlaces, getHeaders }: any) => {
       id: Date.now().toString(),
       title: newPlaceTitle,
       category: newPlaceCat,
+      trip_id: tripId,
     };
 
     try {
@@ -845,7 +996,7 @@ const ExploreTab = ({ places, setPlaces, getHeaders }: any) => {
   const hotspots = places.filter((p: Place) => p.category === "Hotspot");
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500 pb-32">
+    <div className="space-y-8 animate-in fade-in duration-500 pb-40">
       {/* Add Location Form */}
       <div className="bg-zinc-900/40 backdrop-blur-md border border-zinc-800/50 rounded-3xl p-6">
         <h3 className="text-sm font-semibold text-zinc-400 uppercase tracking-wider mb-4">
@@ -951,6 +1102,7 @@ const ExpensesTab = ({
   isAddIncomeOpen,
   setIsAddIncomeOpen,
   getHeaders,
+  tripId,
 }: any) => {
   const [filter, setFilter] = useState<"all" | "trip" | "savings">("all");
 
@@ -984,6 +1136,7 @@ const ExpensesTab = ({
         hour: "2-digit",
         minute: "2-digit",
       }),
+      trip_id: tripId,
     };
 
     try {
@@ -1015,6 +1168,7 @@ const ExpensesTab = ({
         day: "numeric",
         month: "short",
       }),
+      trip_id: tripId,
     };
 
     try {
@@ -1047,13 +1201,13 @@ const ExpensesTab = ({
       <div className="grid grid-cols-2 gap-4">
         <button
           onClick={() => setIsAddExpenseOpen(true)}
-          className="flex items-center justify-center gap-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 py-4 rounded-3xl font-medium transition-colors border border-rose-500/20"
+          className="flex items-center justify-center gap-2 bg-rose-50 hover:bg-rose-100 text-rose-600 py-4 rounded-3xl font-medium transition-colors border border-rose-200"
         >
           <ArrowUpRight className="w-5 h-5" /> Add Expense
         </button>
         <button
           onClick={() => setIsAddIncomeOpen(true)}
-          className="flex items-center justify-center gap-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 py-4 rounded-3xl font-medium transition-colors border border-emerald-500/20"
+          className="flex items-center justify-center gap-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-600 py-4 rounded-3xl font-medium transition-colors border border-emerald-200"
         >
           <ArrowDownRight className="w-5 h-5" /> Add Income
         </button>
@@ -1175,7 +1329,7 @@ const ExpensesTab = ({
                   onClick={() => setNewExpAccount("trip")}
                   className={`flex-1 py-3 rounded-xl text-sm font-semibold transition-all ${newExpAccount === "trip" ? "bg-indigo-500/20 text-indigo-400" : "text-zinc-500 hover:text-zinc-300"}`}
                 >
-                  Delhi Trip
+                  Trip
                 </button>
                 <button
                   type="button"
@@ -1240,7 +1394,7 @@ const ExpensesTab = ({
                   onClick={() => setNewIncAccount("trip")}
                   className={`flex-1 py-3 rounded-xl text-sm font-semibold transition-all ${newIncAccount === "trip" ? "bg-indigo-500/20 text-indigo-400" : "text-zinc-500 hover:text-zinc-300"}`}
                 >
-                  Delhi Trip
+                  Trip
                 </button>
                 <button
                   type="button"
