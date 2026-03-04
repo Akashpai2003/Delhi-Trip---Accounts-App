@@ -15,7 +15,7 @@ const __dirname = path.dirname(__filename);
 // Use DATABASE_URL from environment
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL || "postgres://user:password@localhost:5432/trip_expense",
-  ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : undefined
+  ssl: true // Neon requires SSL
 });
 
 // --- Database Setup ---
