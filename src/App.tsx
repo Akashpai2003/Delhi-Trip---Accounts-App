@@ -90,6 +90,17 @@ interface Place {
   category: PlaceCategory;
 }
 
+interface ScheduleItem {
+  id: string;
+  trip_id: string;
+  place_id: string;
+  date: string;
+  time: string;
+  notes?: string;
+  place_title: string;
+  place_category: PlaceCategory;
+}
+
 // --- Constants ---
 const EXPENSE_CATEGORIES: {
   name: ExpenseCategory;
@@ -202,6 +213,7 @@ export default function App() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [incomes, setIncomes] = useState<Income[]>([]);
   const [places, setPlaces] = useState<Place[]>([]);
+  const [schedule, setSchedule] = useState<ScheduleItem[]>([]);
 
   // UI State
   const [isEditingTrip, setIsEditingTrip] = useState(false);
@@ -211,36 +223,43 @@ export default function App() {
 
   // --- Initialization ---
   useEffect(() => {
-    // Splash screen timer
-    const timer = setTimeout(() => {
-      if (token) {
-        fetchTrips();
+    const init = async () => {
+      // Splash screen timer
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      
+      const storedToken = localStorage.getItem("token");
+      if (storedToken) {
+        // Token is already in state from useState initializer, but we pass it explicitly
+        const success = await fetchTrips(storedToken);
+        if (!success) setAppState("auth");
       } else {
         setAppState("auth");
       }
-    }, 2000);
-    return () => clearTimeout(timer);
-  }, [token]);
+    };
+    init();
+  }, []);
 
   // --- API Calls ---
-  const getHeaders = () => ({
+  const getHeaders = (authToken = token) => ({
     "Content-Type": "application/json",
-    Authorization: `Bearer ${token}`,
+    Authorization: `Bearer ${authToken}`,
   });
 
-  const fetchTrips = async () => {
+  const fetchTrips = async (authToken = token) => {
     try {
-      const res = await fetch("/api/trips", { headers: getHeaders() });
+      const res = await fetch("/api/trips", { headers: getHeaders(authToken) });
       if (res.status === 401) {
         handleLogout();
-        return;
+        return false;
       }
       if (!res.ok) throw new Error("Failed to fetch trips");
       const data = await res.json();
       setTrips(data);
       setAppState("trip_selection");
+      return true;
     } catch (err) {
       console.error(err);
+      return false;
     }
   };
 
@@ -287,6 +306,7 @@ export default function App() {
       setExpenses(data.expenses || []);
       setIncomes(data.incomes || []);
       setPlaces(data.places || []);
+      setSchedule(data.schedule || []);
       
       setAppState("main");
     } catch (err) {
@@ -363,7 +383,10 @@ export default function App() {
       localStorage.setItem("username", data.username);
       setToken(data.token);
       setUsername(data.username);
-      // fetchTrips will be triggered by the useEffect on [token]
+      
+      // Fetch trips immediately with the new token
+      const success = await fetchTrips(data.token);
+      if (!success) throw new Error("Failed to load trips. Please try again.");
     } catch (err: any) {
       setAuthError(err.message);
     }
@@ -682,6 +705,8 @@ export default function App() {
             <ExploreTab
               places={places}
               setPlaces={setPlaces}
+              schedule={schedule}
+              setSchedule={setSchedule}
               getHeaders={getHeaders}
               tripId={currentTrip?.id}
             />
@@ -950,9 +975,15 @@ const PlannerTab = ({ safeDailySpend }: any) => {
   );
 };
 
-const ExploreTab = ({ places, setPlaces, getHeaders, tripId }: any) => {
+const ExploreTab = ({ places, setPlaces, schedule, setSchedule, getHeaders, tripId }: any) => {
   const [newPlaceTitle, setNewPlaceTitle] = useState("");
   const [newPlaceCat, setNewPlaceCat] = useState<PlaceCategory>("Street Food");
+
+  // Schedule State
+  const [schedulePlaceId, setSchedulePlaceId] = useState("");
+  const [scheduleDate, setScheduleDate] = useState("");
+  const [scheduleTime, setScheduleTime] = useState("");
+  const [scheduleNotes, setScheduleNotes] = useState("");
 
   const handleAddPlace = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -990,6 +1021,60 @@ const ExploreTab = ({ places, setPlaces, getHeaders, tripId }: any) => {
     }
   };
 
+  const handleAddSchedule = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!schedulePlaceId || !scheduleDate || !scheduleTime) return;
+
+    const place = places.find((p: Place) => p.id === schedulePlaceId);
+    if (!place) return;
+
+    const newItem: ScheduleItem = {
+      id: Date.now().toString(),
+      trip_id: tripId,
+      place_id: schedulePlaceId,
+      date: scheduleDate,
+      time: scheduleTime,
+      notes: scheduleNotes,
+      place_title: place.title,
+      place_category: place.category,
+    };
+
+    try {
+      await fetch("/api/schedule", {
+        method: "POST",
+        headers: getHeaders(),
+        body: JSON.stringify(newItem),
+      });
+      // Simple sort by date/time locally
+      const newSchedule = [...schedule, newItem].sort((a, b) => {
+        const dateA = new Date(`${a.date}T${a.time}`);
+        const dateB = new Date(`${b.date}T${b.time}`);
+        return dateA.getTime() - dateB.getTime();
+      });
+      setSchedule(newSchedule);
+      
+      // Reset form
+      setSchedulePlaceId("");
+      setScheduleDate("");
+      setScheduleTime("");
+      setScheduleNotes("");
+    } catch (err) {
+      console.error("Failed to add schedule item", err);
+    }
+  };
+
+  const handleDeleteSchedule = async (id: string) => {
+    try {
+      await fetch(`/api/schedule/${id}`, {
+        method: "DELETE",
+        headers: getHeaders(),
+      });
+      setSchedule(schedule.filter((s: ScheduleItem) => s.id !== id));
+    } catch (err) {
+      console.error("Failed to delete schedule item", err);
+    }
+  };
+
   const streetFood = places.filter((p: Place) => p.category === "Street Food");
   const casualDining = places.filter((p: Place) => p.category === "Casual Dining");
   const premium = places.filter((p: Place) => p.category === "Premium");
@@ -997,6 +1082,88 @@ const ExploreTab = ({ places, setPlaces, getHeaders, tripId }: any) => {
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-40">
+      {/* Trip Timeline */}
+      <div className="bg-zinc-900/40 backdrop-blur-md border border-zinc-800/50 rounded-3xl p-6">
+        <h3 className="text-lg font-semibold text-zinc-100 mb-4 flex items-center gap-2">
+          <Calendar className="w-5 h-5 text-indigo-400" /> Trip Timeline
+        </h3>
+        
+        {/* Add Schedule Form */}
+        <form onSubmit={handleAddSchedule} className="space-y-3 mb-6 bg-zinc-950/50 p-4 rounded-2xl border border-zinc-800/50">
+          <div className="grid grid-cols-1 gap-3">
+            <select
+              value={schedulePlaceId}
+              onChange={(e) => setSchedulePlaceId(e.target.value)}
+              className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500 appearance-none"
+              required
+            >
+              <option value="">Select a Place...</option>
+              {places.map((p: Place) => (
+                <option key={p.id} value={p.id}>{p.title} ({p.category})</option>
+              ))}
+            </select>
+            <div className="flex gap-2">
+              <input
+                type="date"
+                value={scheduleDate}
+                onChange={(e) => setScheduleDate(e.target.value)}
+                className="flex-1 bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500"
+                required
+              />
+              <input
+                type="time"
+                value={scheduleTime}
+                onChange={(e) => setScheduleTime(e.target.value)}
+                className="flex-1 bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500"
+                required
+              />
+            </div>
+            <input
+              type="text"
+              value={scheduleNotes}
+              onChange={(e) => setScheduleNotes(e.target.value)}
+              placeholder="Notes (optional)"
+              className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500"
+            />
+            <button
+              type="submit"
+              className="w-full bg-indigo-500 hover:bg-indigo-600 text-white py-3 rounded-xl font-semibold transition-colors text-sm"
+            >
+              Add to Schedule
+            </button>
+          </div>
+        </form>
+
+        {/* Timeline View */}
+        <div className="relative pl-4 border-l-2 border-zinc-800 space-y-6">
+          {schedule.length === 0 && (
+            <p className="text-sm text-zinc-500 italic pl-2">No schedule items added yet.</p>
+          )}
+          {schedule.map((item: ScheduleItem) => (
+            <div key={item.id} className="relative pl-4 group">
+              {/* Dot */}
+              <div className="absolute -left-[21px] top-1.5 w-3 h-3 rounded-full bg-indigo-500 border-2 border-zinc-950" />
+              
+              <div className="bg-zinc-900/50 border border-zinc-800/50 rounded-xl p-3 hover:border-indigo-500/30 transition-colors">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h4 className="font-medium text-zinc-100 text-sm">{item.place_title}</h4>
+                    <p className="text-xs text-zinc-400 mt-0.5">{item.date} • {item.time}</p>
+                    {item.notes && <p className="text-xs text-zinc-500 mt-1 italic">"{item.notes}"</p>}
+                  </div>
+                  <button
+                    onClick={() => handleDeleteSchedule(item.id)}
+                    className="text-zinc-600 hover:text-rose-500 transition-colors p-1"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
       {/* Add Location Form */}
       <div className="bg-zinc-900/40 backdrop-blur-md border border-zinc-800/50 rounded-3xl p-6">
         <h3 className="text-sm font-semibold text-zinc-400 uppercase tracking-wider mb-4">
@@ -1186,6 +1353,30 @@ const ExpensesTab = ({
     }
   };
 
+  const handleDeleteExpense = async (id: string) => {
+    try {
+      await fetch(`/api/expenses/${id}`, {
+        method: "DELETE",
+        headers: getHeaders(),
+      });
+      setExpenses(expenses.filter((e: Expense) => e.id !== id));
+    } catch (err) {
+      console.error("Failed to delete expense", err);
+    }
+  };
+
+  const handleDeleteIncome = async (id: string) => {
+    try {
+      await fetch(`/api/incomes/${id}`, {
+        method: "DELETE",
+        headers: getHeaders(),
+      });
+      setIncomes(incomes.filter((i: Income) => i.id !== id));
+    } catch (err) {
+      console.error("Failed to delete income", err);
+    }
+  };
+
   const filteredExpenses =
     filter === "all"
       ? expenses
@@ -1265,9 +1456,17 @@ const ExpensesTab = ({
                   </p>
                 </div>
               </div>
-              <span className="text-emerald-400 font-semibold">
-                +{formatCurrency(inc.amount)}
-              </span>
+              <div className="flex items-center gap-3">
+                <span className="text-emerald-400 font-semibold">
+                  +{formatCurrency(inc.amount)}
+                </span>
+                <button
+                  onClick={() => handleDeleteIncome(inc.id)}
+                  className="p-1.5 text-zinc-600 hover:text-rose-500 transition-colors rounded-full hover:bg-rose-500/10"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
             </div>
           ))}
 
@@ -1305,9 +1504,17 @@ const ExpensesTab = ({
                     </p>
                   </div>
                 </div>
-                <span className="text-zinc-100 font-semibold">
-                  -{formatCurrency(exp.amount)}
-                </span>
+                <div className="flex items-center gap-3">
+                  <span className="text-zinc-100 font-semibold">
+                    -{formatCurrency(exp.amount)}
+                  </span>
+                  <button
+                    onClick={() => handleDeleteExpense(exp.id)}
+                    className="p-1.5 text-zinc-600 hover:text-rose-500 transition-colors rounded-full hover:bg-rose-500/10"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
             );
           })}
