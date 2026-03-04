@@ -363,7 +363,7 @@ export default function App() {
       localStorage.setItem("username", data.username);
       setToken(data.token);
       setUsername(data.username);
-      fetchTrips();
+      // fetchTrips will be triggered by the useEffect on [token]
     } catch (err: any) {
       setAuthError(err.message);
     }
