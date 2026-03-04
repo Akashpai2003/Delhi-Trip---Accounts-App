@@ -873,7 +873,7 @@ const PlannerTab = ({ safeDailySpend }: any) => {
   const transportCost = metroRides * 40 + autoRides * 150 + cabRides * 400;
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500 pb-24">
+    <div className="space-y-8 animate-in fade-in duration-500 pb-40">
       {/* Smart Allocation */}
       <div className="bg-zinc-900/40 backdrop-blur-md border border-zinc-800/50 rounded-3xl p-6">
         <h3 className="text-lg font-semibold text-zinc-100 mb-6">
@@ -1478,7 +1478,7 @@ const DashboardTab = ({
   setBaseSavings,
   saveFinances,
 }: any) => (
-  <div className="space-y-6 animate-in fade-in duration-500 pb-24">
+  <div className="space-y-6 animate-in fade-in duration-500 pb-40">
     {/* Savings Overview */}
     <div className="bg-zinc-900/50 dark:bg-zinc-900/40 backdrop-blur-md border border-zinc-800/50 rounded-3xl p-5 shadow-lg flex justify-between items-center">
       <div>
