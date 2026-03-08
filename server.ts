@@ -15,22 +15,32 @@ const { Pool } = pg;
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Use DATABASE_URL from environment
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL || "postgres://user:password@localhost:5432/trip_expense",
-  ssl: true // Neon requires SSL
-});
+let pool: pg.Pool | null = null;
+
+function getPool() {
+  if (!pool) {
+    const connectionString = process.env.DATABASE_URL;
+    if (!connectionString) {
+      throw new Error("DATABASE_URL environment variable is required. Please set it in the environment variables.");
+    }
+    pool = new Pool({
+      connectionString,
+      ssl: true // Neon requires SSL
+    });
+  }
+  return pool;
+}
 
 // --- Database Setup ---
 const initDb = async () => {
-  // In a real production app, you might use a migration tool.
-  // For this example, we'll try to connect and create tables if they don't exist.
-  // Note: We catch connection errors to allow the app to start (and fail gracefully or retry) 
-  // if the DB isn't ready immediately, though typically we want to wait.
+  if (!process.env.DATABASE_URL) {
+    console.warn("DATABASE_URL is not set. Skipping database initialization.");
+    return;
+  }
   
   let client;
   try {
-    client = await pool.connect();
+    client = await getPool().connect();
     await client.query(`
       CREATE TABLE IF NOT EXISTS users (
         id SERIAL PRIMARY KEY,
@@ -153,7 +163,7 @@ async function startServer() {
     const { username, password } = req.body;
     try {
       const hash = bcrypt.hashSync(password, 10);
-      const result = await pool.query(
+      const result = await getPool().query(
         "INSERT INTO users (username, password) VALUES ($1, $2) RETURNING id",
         [username, hash]
       );
@@ -172,7 +182,7 @@ async function startServer() {
   app.post("/api/auth/login", async (req, res) => {
     const { username, password } = req.body;
     try {
-      const result = await pool.query("SELECT * FROM users WHERE username = $1", [username]);
+      const result = await getPool().query("SELECT * FROM users WHERE username = $1", [username]);
       const user = result.rows[0];
 
       if (!user || !bcrypt.compareSync(password, user.password)) {
@@ -190,7 +200,7 @@ async function startServer() {
   // --- Data Routes ---
   app.get("/api/trips", authenticate, async (req: any, res) => {
     try {
-      const result = await pool.query(`
+      const result = await getPool().query(`
         SELECT t.id, t.user_id, t.name, 
           t.totalBudget as "totalBudget", 
           t.platinumTicket as "platinumTicket", 
@@ -218,7 +228,7 @@ async function startServer() {
   app.post("/api/trips", authenticate, async (req: any, res) => {
     const { id, name, totalBudget, duration } = req.body;
     try {
-      await pool.query(
+      await getPool().query(
         "INSERT INTO trips (id, user_id, name, totalBudget, duration) VALUES ($1, $2, $3, $4, $5)",
         [id, req.userId, name, totalBudget || 0, duration || 3]
       );
@@ -232,7 +242,7 @@ async function startServer() {
   app.delete("/api/trips/:id", authenticate, async (req: any, res) => {
     const { id } = req.params;
     try {
-      await pool.query("DELETE FROM trips WHERE id = $1 AND user_id = $2", [id, req.userId]);
+      await getPool().query("DELETE FROM trips WHERE id = $1 AND user_id = $2", [id, req.userId]);
       res.json({ success: true });
     } catch (err) {
       console.error(err);
@@ -243,7 +253,7 @@ async function startServer() {
   app.get("/api/trips/:id/data", authenticate, async (req: any, res) => {
     const { id } = req.params;
     try {
-      const tripResult = await pool.query(`
+      const tripResult = await getPool().query(`
         SELECT id, user_id, name, 
           totalBudget as "totalBudget", 
           platinumTicket as "platinumTicket", 
@@ -262,16 +272,16 @@ async function startServer() {
       const trip = tripResult.rows[0];
       if (!trip) return res.status(404).json({ error: "Trip not found" });
 
-      const expenses = await pool.query(`
+      const expenses = await getPool().query(`
         SELECT id, user_id, trip_id, title, amount, category, accountId as "accountId", date, time 
         FROM expenses WHERE trip_id = $1 ORDER BY id DESC
       `, [id]);
-      const incomes = await pool.query(`
+      const incomes = await getPool().query(`
         SELECT id, user_id, trip_id, title, amount, category, accountId as "accountId", date 
         FROM incomes WHERE trip_id = $1 ORDER BY id DESC
       `, [id]);
-      const places = await pool.query("SELECT * FROM places WHERE trip_id = $1 ORDER BY id DESC", [id]);
-      const schedule = await pool.query(`
+      const places = await getPool().query("SELECT * FROM places WHERE trip_id = $1 ORDER BY id DESC", [id]);
+      const schedule = await getPool().query(`
         SELECT s.id, s.user_id, s.trip_id, s.place_id, s.date, s.time, s.notes, 
                p.title as place_title, p.category as place_category,
                p.lat as place_lat, p.lng as place_lng, p.rating as place_rating
@@ -305,7 +315,7 @@ async function startServer() {
     } = req.body;
 
     try {
-      await pool.query(`
+      await getPool().query(`
         UPDATE trips SET 
           totalBudget = $1, platinumTicket = $2, pendingPlatinum = $3, 
           flightTotal = $4, myFlightShare = $5, stay = $6, 
@@ -337,7 +347,7 @@ async function startServer() {
   app.post("/api/expenses", authenticate, async (req: any, res) => {
     const { id, trip_id, title, amount, category, accountId, date, time } = req.body;
     try {
-      await pool.query(
+      await getPool().query(
         "INSERT INTO expenses (id, user_id, trip_id, title, amount, category, accountId, date, time) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
         [id, req.userId, trip_id, title, amount, category, accountId, date, time]
       );
@@ -351,7 +361,7 @@ async function startServer() {
   app.delete("/api/expenses/:id", authenticate, async (req: any, res) => {
     const { id } = req.params;
     try {
-      const result = await pool.query("DELETE FROM expenses WHERE id = $1 AND user_id = $2", [id, req.userId]);
+      const result = await getPool().query("DELETE FROM expenses WHERE id = $1 AND user_id = $2", [id, req.userId]);
       if (result.rowCount && result.rowCount > 0) {
         res.json({ success: true });
       } else {
@@ -366,7 +376,7 @@ async function startServer() {
   app.post("/api/incomes", authenticate, async (req: any, res) => {
     const { id, trip_id, title, amount, category, accountId, date } = req.body;
     try {
-      await pool.query(
+      await getPool().query(
         "INSERT INTO incomes (id, user_id, trip_id, title, amount, category, accountId, date) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
         [id, req.userId, trip_id, title, amount, category, accountId, date]
       );
@@ -380,7 +390,7 @@ async function startServer() {
   app.delete("/api/incomes/:id", authenticate, async (req: any, res) => {
     const { id } = req.params;
     try {
-      const result = await pool.query("DELETE FROM incomes WHERE id = $1 AND user_id = $2", [id, req.userId]);
+      const result = await getPool().query("DELETE FROM incomes WHERE id = $1 AND user_id = $2", [id, req.userId]);
       if (result.rowCount && result.rowCount > 0) {
         res.json({ success: true });
       } else {
@@ -419,7 +429,7 @@ async function startServer() {
     }
 
     try {
-      await pool.query(
+      await getPool().query(
         "INSERT INTO places (id, user_id, trip_id, title, category, lat, lng, rating) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
         [id, req.userId, trip_id, title, category, finalLat, finalLng, rating]
       );
@@ -438,7 +448,7 @@ async function startServer() {
   app.delete("/api/places/:id", authenticate, async (req: any, res) => {
     const { id } = req.params;
     try {
-      const result = await pool.query("DELETE FROM places WHERE id = $1 AND user_id = $2", [id, req.userId]);
+      const result = await getPool().query("DELETE FROM places WHERE id = $1 AND user_id = $2", [id, req.userId]);
       if (result.rowCount && result.rowCount > 0) {
         res.json({ success: true });
       } else {
@@ -453,7 +463,7 @@ async function startServer() {
   app.post("/api/schedule", authenticate, async (req: any, res) => {
     const { id, trip_id, place_id, date, time, notes } = req.body;
     try {
-      await pool.query(
+      await getPool().query(
         "INSERT INTO schedule (id, user_id, trip_id, place_id, date, time, notes) VALUES ($1, $2, $3, $4, $5, $6, $7)",
         [id, req.userId, trip_id, place_id, date, time, notes]
       );
@@ -467,7 +477,7 @@ async function startServer() {
   app.delete("/api/schedule/:id", authenticate, async (req: any, res) => {
     const { id } = req.params;
     try {
-      const result = await pool.query("DELETE FROM schedule WHERE id = $1 AND user_id = $2", [id, req.userId]);
+      const result = await getPool().query("DELETE FROM schedule WHERE id = $1 AND user_id = $2", [id, req.userId]);
       if (result.rowCount && result.rowCount > 0) {
         res.json({ success: true });
       } else {
@@ -481,11 +491,11 @@ async function startServer() {
 
   app.post("/api/reset", authenticate, async (req: any, res) => {
     try {
-      await pool.query("DELETE FROM expenses WHERE user_id = $1", [req.userId]);
-      await pool.query("DELETE FROM incomes WHERE user_id = $1", [req.userId]);
-      await pool.query("DELETE FROM schedule WHERE user_id = $1", [req.userId]);
-      await pool.query("DELETE FROM places WHERE user_id = $1", [req.userId]);
-      await pool.query("DELETE FROM trips WHERE user_id = $1", [req.userId]);
+      await getPool().query("DELETE FROM expenses WHERE user_id = $1", [req.userId]);
+      await getPool().query("DELETE FROM incomes WHERE user_id = $1", [req.userId]);
+      await getPool().query("DELETE FROM schedule WHERE user_id = $1", [req.userId]);
+      await getPool().query("DELETE FROM places WHERE user_id = $1", [req.userId]);
+      await getPool().query("DELETE FROM trips WHERE user_id = $1", [req.userId]);
       res.json({ success: true });
     } catch (err) {
       console.error(err);

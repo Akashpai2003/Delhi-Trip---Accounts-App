@@ -245,7 +245,7 @@ const Modal = ({ children, onClose, title }: any) => (
       animate={{ y: 0 }}
       exit={{ y: "100%" }}
       transition={{ type: "spring", damping: 25, stiffness: 200 }}
-      className="fixed bottom-0 left-0 right-0 bg-zinc-900 rounded-t-[2.5rem] z-50 p-6 border-t border-zinc-800 max-w-md mx-auto shadow-2xl"
+      className="fixed bottom-0 left-0 right-0 bg-zinc-900 rounded-t-[2.5rem] z-50 p-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))] border-t border-zinc-800 max-w-md mx-auto shadow-2xl max-h-[90vh] overflow-y-auto"
     >
       <div className="w-12 h-1.5 bg-zinc-800 rounded-full mx-auto mb-6" />
       <div className="flex justify-between items-center mb-6">
@@ -1003,8 +1003,8 @@ export default function App() {
         </main>
 
         {/* Bottom Navigation */}
-        <nav className="fixed bottom-6 left-6 right-6 max-w-[calc(28rem-3rem)] mx-auto bg-zinc-900/80 backdrop-blur-xl border border-white/5 rounded-2xl shadow-2xl z-30">
-          <div className="flex justify-between items-center p-2">
+        <nav className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-zinc-950/90 backdrop-blur-xl border-t border-white/5 z-30 pb-[env(safe-area-inset-bottom)]">
+          <div className="flex justify-between items-center p-2 px-6">
             <NavButton
               icon={LayoutDashboard}
               label="Home"
@@ -1978,7 +1978,7 @@ const ExpensesTab = ({
       : incomes.filter((i: Income) => i.accountId === filter);
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500 pb-24">
+    <div className="space-y-8 animate-in fade-in duration-500 pb-40">
       {/* Actions */}
       <div className="grid grid-cols-2 gap-4">
         <button
