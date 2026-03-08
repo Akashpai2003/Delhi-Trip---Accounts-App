@@ -543,7 +543,7 @@ export default function App() {
   // Trip Math
   const customCostsTotal = customCosts.reduce((sum, c) => sum + c.amount, 0);
   const tripEffectiveSpent =
-    customCostsTotal + tripDynamicSpent;
+    customCostsTotal + tripDynamicSpent + (platinumTicket || 0) + (pendingPlatinum || 0) + (myFlightShare || 0) + (stay || 0);
   const tripTotalIncoming = expectedIncoming + tripDynamicIncome;
   const tripRemainingBalance =
     totalBudget - tripEffectiveSpent + tripTotalIncoming;
@@ -993,6 +993,12 @@ export default function App() {
               setCustomCosts={setCustomCosts}
               duration={currentTrip?.duration}
               expenses={expenses}
+              platinumTicket={platinumTicket}
+              pendingPlatinum={pendingPlatinum}
+              myFlightShare={myFlightShare}
+              stay={stay}
+              tripDynamicSpent={tripDynamicSpent}
+              tripDynamicIncome={tripDynamicIncome}
             />
           )}
           {activeTab === "explore" && (
@@ -1189,6 +1195,12 @@ const PlannerTab = ({
   setCustomCosts,
   duration,
   expenses,
+  platinumTicket,
+  pendingPlatinum,
+  myFlightShare,
+  stay,
+  tripDynamicSpent,
+  tripDynamicIncome,
 }: any) => {
   const [tripDays, setTripDays] = useState(duration || 3);
 
@@ -1199,23 +1211,38 @@ const PlannerTab = ({
   const [dailyShopping, setDailyShopping] = useState(0);
 
   // Calculations
-  const fixedCosts = customCosts.reduce(
+  const customFixedCosts = customCosts.reduce(
     (sum: number, c: any) => sum + Number(c.amount),
     0,
   );
+  
+  const allFixedCosts = 
+    customFixedCosts + 
+    Number(platinumTicket || 0) + 
+    Number(pendingPlatinum || 0) + 
+    Number(myFlightShare || 0) + 
+    Number(stay || 0);
+
+  // Disposable budget is what's left after all fixed costs and already spent money
   const disposableBudget =
     Number(totalBudget || 0) +
-    Number(expectedIncoming || 0) -
-    fixedCosts;
+    Number(expectedIncoming || 0) +
+    Number(tripDynamicIncome || 0) -
+    allFixedCosts -
+    Number(tripDynamicSpent || 0);
 
   const dailyTotal = dailyFood + dailyTransport + dailyMisc + dailyShopping;
-  const projectedTripCost = dailyTotal * tripDays + fixedCosts;
+  
+  // Projected cost includes what's already spent + what we plan to spend daily
+  const projectedTripCost = (dailyTotal * tripDays) + allFixedCosts + Number(tripDynamicSpent || 0);
+  
   const remainingBudget =
     Number(totalBudget || 0) +
-    Number(expectedIncoming || 0) -
+    Number(expectedIncoming || 0) +
+    Number(tripDynamicIncome || 0) -
     projectedTripCost;
 
-  const dailyLimit = disposableBudget / tripDays;
+  const dailyLimit = Math.max(0, disposableBudget / tripDays);
   const budgetHealth = (remainingBudget / (totalBudget || 1)) * 100;
 
   // Prepare chart data
@@ -2029,31 +2056,31 @@ const ExpensesTab = ({
             {filteredIncomes.map((inc: Income) => (
               <div
                 key={inc.id}
-                className="p-4 flex items-center justify-between border-b border-zinc-800/50 last:border-0"
+                className="p-4 flex items-center justify-between border-b border-zinc-800/50 last:border-0 gap-4"
               >
-                <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center border border-emerald-500/20">
+                <div className="flex items-center gap-4 min-w-0">
+                  <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center border border-emerald-500/20 shrink-0">
                     <ArrowDownRight className="w-5 h-5" />
                   </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm font-medium text-zinc-100">
-                        {inc.title}
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                        <p className="text-sm font-medium text-zinc-100 break-words">
+                          {inc.title}
+                        </p>
+                        {filter === "all" && (
+                          <span
+                            className={`text-[9px] px-1.5 py-0.5 rounded uppercase font-bold tracking-wider shrink-0 ${inc.accountId === "trip" ? "bg-indigo-500/20 text-indigo-400" : "bg-emerald-500/20 text-emerald-400"}`}
+                          >
+                            {inc.accountId === "trip" ? tripName || "Trip" : inc.accountId}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-zinc-500 mt-0.5">
+                        {inc.category} • {inc.date}
                       </p>
-                      {filter === "all" && (
-                        <span
-                          className={`text-[9px] px-1.5 py-0.5 rounded uppercase font-bold tracking-wider ${inc.accountId === "trip" ? "bg-indigo-500/20 text-indigo-400" : "bg-emerald-500/20 text-emerald-400"}`}
-                        >
-                          {inc.accountId === "trip" ? tripName || "Trip" : inc.accountId}
-                        </span>
-                      )}
                     </div>
-                    <p className="text-xs text-zinc-500 mt-0.5">
-                      {inc.category} • {inc.date}
-                    </p>
-                  </div>
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 shrink-0">
                   <span className="text-emerald-400 font-semibold tracking-tight">
                     +{formatCurrency(inc.amount)}
                   </span>
@@ -2075,22 +2102,22 @@ const ExpensesTab = ({
               return (
                 <div
                   key={exp.id}
-                  className="p-4 flex items-center justify-between border-b border-zinc-800/50 last:border-0"
+                  className="p-4 flex items-center justify-between border-b border-zinc-800/50 last:border-0 gap-4"
                 >
-                  <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-4 min-w-0">
                     <div
-                      className={`w-10 h-10 rounded-2xl flex items-center justify-center ${cat.color} bg-opacity-10 border border-current border-opacity-20`}
+                      className={`w-10 h-10 rounded-2xl flex items-center justify-center ${cat.color} bg-opacity-10 border border-current border-opacity-20 shrink-0`}
                     >
                       <Icon className="w-5 h-5" />
                     </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <p className="text-sm font-medium text-zinc-100">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                        <p className="text-sm font-medium text-zinc-100 break-words">
                           {exp.title}
                         </p>
                         {filter === "all" && (
                           <span
-                            className={`text-[9px] px-1.5 py-0.5 rounded uppercase font-bold tracking-wider ${exp.accountId === "trip" ? "bg-indigo-500/20 text-indigo-400" : "bg-emerald-500/20 text-emerald-400"}`}
+                            className={`text-[9px] px-1.5 py-0.5 rounded uppercase font-bold tracking-wider shrink-0 ${exp.accountId === "trip" ? "bg-indigo-500/20 text-indigo-400" : "bg-emerald-500/20 text-emerald-400"}`}
                           >
                             {exp.accountId === "trip" ? tripName || "Trip" : exp.accountId}
                           </span>
@@ -2101,7 +2128,7 @@ const ExpensesTab = ({
                       </p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-3 shrink-0">
                     <span className="text-zinc-100 font-semibold tracking-tight">
                       -{formatCurrency(exp.amount)}
                     </span>
