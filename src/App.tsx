@@ -118,6 +118,7 @@ type ExpenseCategory =
   | "Metro"
   | "Auto"
   | "Cab"
+  | "Flight"
   | "Attractions"
   | "Shopping"
   | "Misc";
@@ -204,6 +205,7 @@ const EXPENSE_CATEGORIES: {
   { name: "Metro", icon: Train, color: "text-blue-600 bg-blue-100" },
   { name: "Auto", icon: Navigation, color: "text-yellow-600 bg-yellow-100" },
   { name: "Cab", icon: Car, color: "text-indigo-600 bg-indigo-100" },
+  { name: "Flight", icon: Plane, color: "text-sky-600 bg-sky-100" },
   {
     name: "Attractions",
     icon: Ticket,
@@ -2056,40 +2058,42 @@ const ExpensesTab = ({
             {filteredIncomes.map((inc: Income) => (
               <div
                 key={inc.id}
-                className="p-4 flex items-center justify-between border-b border-zinc-800/50 last:border-0 gap-4"
+                className="p-4 flex items-start justify-between border-b border-zinc-800/50 last:border-0 gap-3"
               >
-                <div className="flex items-center gap-4 min-w-0">
-                  <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center border border-emerald-500/20 shrink-0">
+                <div className="flex items-start gap-3 min-w-0 flex-1">
+                  <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center border border-emerald-500/20 shrink-0 mt-0.5">
                     <ArrowDownRight className="w-5 h-5" />
                   </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                        <p className="text-sm font-medium text-zinc-100 break-words">
-                          {inc.title}
-                        </p>
-                        {filter === "all" && (
-                          <span
-                            className={`text-[9px] px-1.5 py-0.5 rounded uppercase font-bold tracking-wider shrink-0 ${inc.accountId === "trip" ? "bg-indigo-500/20 text-indigo-400" : "bg-emerald-500/20 text-emerald-400"}`}
-                          >
-                            {inc.accountId === "trip" ? tripName || "Trip" : inc.accountId}
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-xs text-zinc-500 mt-0.5">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold text-zinc-100 leading-tight break-words mb-1">
+                      {inc.title}
+                    </p>
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                      <p className="text-[11px] text-zinc-500 font-medium">
                         {inc.category} • {inc.date}
                       </p>
+                      {filter === "all" && (
+                        <span
+                          className={`text-[8px] px-1.5 py-0.5 rounded uppercase font-bold tracking-wider shrink-0 ${inc.accountId === "trip" ? "bg-indigo-500/20 text-indigo-400 border border-indigo-500/10" : "bg-emerald-500/20 text-emerald-400 border border-emerald-500/10"}`}
+                        >
+                          {inc.accountId === "trip" ? tripName || "Trip" : inc.accountId}
+                        </span>
+                      )}
                     </div>
+                  </div>
                 </div>
-                <div className="flex items-center gap-3 shrink-0">
-                  <span className="text-emerald-400 font-semibold tracking-tight">
-                    +{formatCurrency(inc.amount)}
-                  </span>
-                  <button
-                    onClick={() => handleDeleteIncome(inc.id)}
-                    className="p-2 text-zinc-600 hover:text-rose-500 hover:bg-rose-500/10 rounded-lg transition-all"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                <div className="flex flex-col items-end gap-2 shrink-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-emerald-400 font-bold tracking-tight text-sm">
+                      +{formatCurrency(inc.amount)}
+                    </span>
+                    <button
+                      onClick={() => handleDeleteIncome(inc.id)}
+                      className="p-1.5 text-zinc-700 hover:text-rose-500 hover:bg-rose-500/10 rounded-lg transition-all"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
               </div>
             ))}
@@ -2102,42 +2106,44 @@ const ExpensesTab = ({
               return (
                 <div
                   key={exp.id}
-                  className="p-4 flex items-center justify-between border-b border-zinc-800/50 last:border-0 gap-4"
+                  className="p-4 flex items-start justify-between border-b border-zinc-800/50 last:border-0 gap-3"
                 >
-                  <div className="flex items-center gap-4 min-w-0">
+                  <div className="flex items-start gap-3 min-w-0 flex-1">
                     <div
-                      className={`w-10 h-10 rounded-2xl flex items-center justify-center ${cat.color} bg-opacity-10 border border-current border-opacity-20 shrink-0`}
+                      className={`w-10 h-10 rounded-2xl flex items-center justify-center ${cat.color} bg-opacity-10 border border-current border-opacity-20 shrink-0 mt-0.5`}
                     >
                       <Icon className="w-5 h-5" />
                     </div>
                     <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold text-zinc-100 leading-tight break-words mb-1">
+                        {exp.title}
+                      </p>
                       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                        <p className="text-sm font-medium text-zinc-100 break-words">
-                          {exp.title}
+                        <p className="text-[11px] text-zinc-500 font-medium">
+                          {exp.category} • {exp.time}
                         </p>
                         {filter === "all" && (
                           <span
-                            className={`text-[9px] px-1.5 py-0.5 rounded uppercase font-bold tracking-wider shrink-0 ${exp.accountId === "trip" ? "bg-indigo-500/20 text-indigo-400" : "bg-emerald-500/20 text-emerald-400"}`}
+                            className={`text-[8px] px-1.5 py-0.5 rounded uppercase font-bold tracking-wider shrink-0 ${exp.accountId === "trip" ? "bg-indigo-500/20 text-indigo-400 border border-indigo-500/10" : "bg-emerald-500/20 text-emerald-400 border border-emerald-500/10"}`}
                           >
                             {exp.accountId === "trip" ? tripName || "Trip" : exp.accountId}
                           </span>
                         )}
                       </div>
-                      <p className="text-xs text-zinc-500 mt-0.5">
-                        {exp.category} • {exp.time}
-                      </p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3 shrink-0">
-                    <span className="text-zinc-100 font-semibold tracking-tight">
-                      -{formatCurrency(exp.amount)}
-                    </span>
-                    <button
-                      onClick={() => handleDeleteExpense(exp.id)}
-                      className="p-2 text-zinc-600 hover:text-rose-500 hover:bg-rose-500/10 rounded-lg transition-all"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                  <div className="flex flex-col items-end gap-2 shrink-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-zinc-100 font-bold tracking-tight text-sm">
+                        -{formatCurrency(exp.amount)}
+                      </span>
+                      <button
+                        onClick={() => handleDeleteExpense(exp.id)}
+                        className="p-1.5 text-zinc-700 hover:text-rose-500 hover:bg-rose-500/10 rounded-lg transition-all"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
                 </div>
               );
