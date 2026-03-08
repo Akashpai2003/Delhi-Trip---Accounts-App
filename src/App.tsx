@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "motion/react";
 import {
   LayoutDashboard,
@@ -231,36 +232,40 @@ const formatCurrency = (amount: number) => {
   }).format(amount || 0);
 };
 
-const Modal = ({ children, onClose, title }: any) => (
-  <>
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      onClick={onClose}
-      className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40"
-    />
-    <motion.div
-      initial={{ y: "100%" }}
-      animate={{ y: 0 }}
-      exit={{ y: "100%" }}
-      transition={{ type: "spring", damping: 25, stiffness: 200 }}
-      className="fixed bottom-0 left-0 right-0 bg-zinc-900 rounded-t-[2.5rem] z-50 p-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))] border-t border-zinc-800 max-w-md mx-auto shadow-2xl max-h-[90vh] overflow-y-auto"
-    >
-      <div className="w-12 h-1.5 bg-zinc-800 rounded-full mx-auto mb-6" />
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="text-xl font-semibold text-zinc-100">{title}</h2>
-        <button
-          onClick={onClose}
-          className="p-2 bg-zinc-800 rounded-full text-zinc-400 hover:text-zinc-100"
-        >
-          <X className="w-5 h-5" />
-        </button>
-      </div>
-      {children}
-    </motion.div>
-  </>
-);
+const Modal = ({ children, onClose, title }: any) => {
+  if (typeof document === "undefined") return null;
+  return createPortal(
+    <>
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        onClick={onClose}
+        className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100]"
+      />
+      <motion.div
+        initial={{ y: "100%" }}
+        animate={{ y: 0 }}
+        exit={{ y: "100%" }}
+        transition={{ type: "spring", damping: 25, stiffness: 200 }}
+        className="fixed bottom-0 left-0 right-0 bg-zinc-900 rounded-t-[2.5rem] z-[110] p-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))] border-t border-zinc-800 max-w-md mx-auto shadow-2xl max-h-[90vh] overflow-y-auto"
+      >
+        <div className="w-12 h-1.5 bg-zinc-800 rounded-full mx-auto mb-6" />
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-xl font-semibold text-zinc-100">{title}</h2>
+          <button
+            onClick={onClose}
+            className="p-2 bg-zinc-800 rounded-full text-zinc-400 hover:text-zinc-100"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        {children}
+      </motion.div>
+    </>,
+    document.body
+  );
+};
 
 export default function App() {
   // --- App State ---
