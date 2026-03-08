@@ -32,6 +32,8 @@ import {
   Camera,
   Star,
   Plane,
+  RefreshCw,
+  Upload,
 } from "lucide-react";
 import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -140,6 +142,8 @@ interface Trip {
   tripDynamicSpent?: number;
   tripDynamicIncome?: number;
   duration?: number;
+  imageSeed?: string;
+  coverImage?: string;
   customCosts?: { id: string; label: string; amount: number }[];
 }
 
@@ -293,6 +297,8 @@ export default function App() {
   const [stay, setStay] = useState(0);
   const [expectedIncoming, setExpectedIncoming] = useState(0);
   const [customCosts, setCustomCosts] = useState<{ id: string; label: string; amount: number }[]>([]);
+  const [imageSeed, setImageSeed] = useState("");
+  const [coverImage, setCoverImage] = useState("");
 
   // Fixed Finances State (Savings)
   const [baseSavings, setBaseSavings] = useState(0);
@@ -408,6 +414,8 @@ export default function App() {
       setExpectedIncoming(t.expectedIncoming || 0);
       setBaseSavings(t.baseSavings || 0);
       setCustomCosts(t.customCosts || []);
+      setImageSeed(t.imageSeed || "");
+      setCoverImage(t.coverImage || "");
 
       setExpenses(data.expenses || []);
       setIncomes(data.incomes || []);
@@ -458,6 +466,8 @@ export default function App() {
           expectedIncoming,
           baseSavings,
           customCosts,
+          imageSeed,
+          coverImage,
         }),
       });
     } catch (err) {
@@ -469,7 +479,7 @@ export default function App() {
     if (appState === "main" && !isEditingTrip && !isEditingSavings) {
       saveFinances();
     }
-  }, [isEditingTrip, isEditingSavings]);
+  }, [isEditingTrip, isEditingSavings, imageSeed, coverImage]);
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -564,29 +574,35 @@ export default function App() {
 
   if (appState === "auth") {
     return (
-      <div className="min-h-screen bg-zinc-950 flex items-center justify-center p-6">
-        <div className="w-full max-w-sm bg-zinc-900 border border-zinc-800 rounded-3xl p-8 shadow-xl">
-          <div className="w-12 h-12 bg-zinc-800 rounded-2xl flex items-center justify-center mb-6 border border-zinc-700">
-            <Compass className="w-6 h-6 text-indigo-500" />
-          </div>
-          <h2 className="text-2xl font-bold text-zinc-100 mb-2">
-            {authMode === "login" ? "Welcome back" : "Create account"}
-          </h2>
-          <p className="text-zinc-400 text-sm mb-8">
-            {authMode === "login"
-              ? "Enter your details to access your trip."
-              : "Start planning your next adventure."}
-          </p>
+      <div className="min-h-screen bg-zinc-950 flex items-center justify-center p-6 relative overflow-hidden">
+        {/* Background Elements */}
+        <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none">
+          <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-indigo-500/10 rounded-full blur-[100px]" />
+          <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-emerald-500/10 rounded-full blur-[100px]" />
+        </div>
 
-          <form onSubmit={handleAuth} className="space-y-4">
+        <div className="w-full max-w-sm bg-zinc-900/50 border border-zinc-800/50 rounded-3xl p-8 shadow-2xl backdrop-blur-xl relative z-10">
+          <div className="text-center mb-8">
+            <div className="w-16 h-16 bg-gradient-to-br from-indigo-500 to-violet-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-indigo-500/20">
+              <Plane className="w-8 h-8 text-white" />
+            </div>
+            <h1 className="text-3xl font-bold text-zinc-100 tracking-tight">
+              TripExpense
+            </h1>
+            <p className="text-zinc-400 mt-2 text-sm">
+              Manage your travel budget with ease.
+            </p>
+          </div>
+
+          <form onSubmit={handleAuth} className="space-y-5">
             {authError && (
-              <div className="p-3 bg-rose-500/10 border border-rose-500/20 rounded-xl text-rose-400 text-sm">
+              <div className="bg-rose-500/10 border border-rose-500/20 text-rose-400 px-4 py-3 rounded-xl text-sm text-center font-medium">
                 {authError}
               </div>
             )}
-
+            
             <div>
-              <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-1.5 block">
+              <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-1.5 block ml-1">
                 Username
               </label>
               <input
@@ -594,12 +610,12 @@ export default function App() {
                 required
                 value={authUsername}
                 onChange={(e) => setAuthUsername(e.target.value)}
-                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-zinc-100 focus:outline-none focus:border-indigo-500 transition-colors"
+                className="w-full bg-zinc-950/50 border border-zinc-800/50 rounded-xl px-4 py-3.5 text-zinc-100 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/50 transition-all placeholder:text-zinc-600"
                 placeholder="johndoe"
               />
             </div>
             <div>
-              <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-1.5 block">
+              <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-1.5 block ml-1">
                 Password
               </label>
               <input
@@ -607,25 +623,25 @@ export default function App() {
                 required
                 value={authPassword}
                 onChange={(e) => setAuthPassword(e.target.value)}
-                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-zinc-100 focus:outline-none focus:border-indigo-500 transition-colors"
+                className="w-full bg-zinc-950/50 border border-zinc-800/50 rounded-xl px-4 py-3.5 text-zinc-100 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/50 transition-all placeholder:text-zinc-600"
                 placeholder="••••••••"
               />
             </div>
             <button
               type="submit"
-              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-3.5 rounded-xl font-semibold transition-colors mt-2"
+              className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-3.5 rounded-xl font-semibold transition-all mt-2 shadow-lg shadow-indigo-500/20"
             >
-              {authMode === "login" ? "Sign In" : "Sign Up"}
+              {authMode === "login" ? "Sign In" : "Create Account"}
             </button>
           </form>
 
-          <div className="mt-6 text-center">
+          <div className="mt-8 text-center border-t border-zinc-800/50 pt-6">
             <button
               onClick={() => {
                 setAuthMode(authMode === "login" ? "register" : "login");
                 setAuthError("");
               }}
-              className="text-sm text-zinc-500 hover:text-zinc-300"
+              className="text-sm text-zinc-500 hover:text-zinc-300 transition-colors font-medium"
             >
               {authMode === "login"
                 ? "Don't have an account? Sign up"
@@ -639,16 +655,21 @@ export default function App() {
 
   if (appState === "trip_selection") {
     return (
-      <div className="min-h-screen bg-zinc-950 p-6">
-        <div className="max-w-md mx-auto">
-          <header className="flex justify-between items-center mb-8 pt-8">
+      <div className="min-h-screen bg-zinc-950 p-6 relative overflow-hidden">
+         {/* Background Elements */}
+         <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none">
+          <div className="absolute top-[-20%] right-[-20%] w-[60%] h-[60%] bg-indigo-500/5 rounded-full blur-[120px]" />
+        </div>
+
+        <div className="max-w-md mx-auto relative z-10">
+          <header className="flex justify-between items-center mb-10 pt-8">
             <div>
-              <h1 className="text-2xl font-bold text-zinc-100">Your Trips</h1>
-              <p className="text-zinc-400 text-sm">Select a trip to manage</p>
+              <h1 className="text-3xl font-bold text-zinc-100 tracking-tight">Your Trips</h1>
+              <p className="text-zinc-400 text-sm mt-1">Select a trip to manage</p>
             </div>
             <button
               onClick={handleLogout}
-              className="p-2 bg-zinc-900 rounded-full text-zinc-400 hover:text-rose-500 shadow-sm border border-zinc-800"
+              className="p-2.5 bg-zinc-900/50 rounded-full text-zinc-400 hover:text-rose-400 hover:bg-rose-500/10 shadow-sm border border-zinc-800/50 transition-all"
             >
               <LogOut className="w-5 h-5" />
             </button>
@@ -669,50 +690,67 @@ export default function App() {
               const remaining =
                 Number(trip.totalBudget || 0) - effectiveSpent + totalIncoming;
 
+              const budget = Number(trip.totalBudget || 0) + Number(trip.expectedIncoming || 0);
+              const progress = budget > 0 ? (effectiveSpent / budget) * 100 : 0;
+
               return (
                 <motion.div
                   key={trip.id}
                   whileTap={{ scale: 0.98 }}
                   onClick={() => selectTrip(trip)}
-                  className="bg-zinc-900/50 p-5 rounded-2xl shadow-sm border border-zinc-800/50 flex justify-between items-center cursor-pointer group"
+                  className="w-full bg-zinc-900/50 border border-zinc-800/50 rounded-3xl p-5 text-left transition-all group relative overflow-hidden cursor-pointer"
                 >
-                  <div className="flex-1">
-                    <h3 className="font-semibold text-zinc-100 text-lg mb-1">
-                      {trip.name}
-                    </h3>
-                    <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
-                      <p className="text-zinc-400">
-                        Budget:{" "}
-                        <span className="text-zinc-300">
-                          {formatCurrency(trip.totalBudget)}
-                        </span>
-                      </p>
-                      <p className="text-zinc-400">
-                        Spent:{" "}
-                        <span className="text-zinc-300">
-                          {formatCurrency(effectiveSpent)}
-                        </span>
-                      </p>
-                      <p className="text-zinc-400 col-span-2">
-                        Remaining:{" "}
-                        <span
-                          className={
-                            remaining < 0 ? "text-rose-400" : "text-emerald-400"
-                          }
+                  <div className="flex justify-between items-start mb-4">
+                    <div>
+                      <h3 className="text-lg font-bold text-zinc-100">
+                        {trip.name}
+                      </h3>
+                      <div className="flex items-center gap-2 mt-1 text-xs text-zinc-500">
+                        <Calendar className="w-3 h-3" />
+                        <span>{new Date(parseInt(trip.id)).toLocaleDateString()}</span>
+                        <span>•</span>
+                        <span>{trip.duration || 3} days</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                deleteTrip(trip.id, e);
+                            }}
+                            className="w-8 h-8 rounded-full bg-zinc-950/50 border border-zinc-800/50 flex items-center justify-center text-zinc-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors z-10"
                         >
-                          {formatCurrency(remaining)}
-                        </span>
-                      </p>
+                            <Trash2 className="w-4 h-4" />
+                        </button>
+                        <div className="w-8 h-8 rounded-full bg-zinc-950/50 border border-zinc-800/50 flex items-center justify-center">
+                            <ChevronRight className="w-4 h-4 text-zinc-500" />
+                        </div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3 pl-4 border-l border-zinc-800/50 ml-4">
-                    <button
-                      onClick={(e) => deleteTrip(trip.id, e)}
-                      className="p-2 text-zinc-500 hover:text-rose-500 transition-colors"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                    <ChevronRight className="w-5 h-5 text-zinc-600" />
+
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-xs font-medium">
+                      <span className="text-zinc-500">Budget Used</span>
+                      <span className={progress > 100 ? "text-rose-400" : "text-zinc-300"}>
+                        {Math.round(progress)}%
+                      </span>
+                    </div>
+                    <div className="h-2 bg-zinc-950 rounded-full overflow-hidden border border-zinc-800/30">
+                      <div
+                        className={`h-full rounded-full transition-all duration-500 ${
+                          progress > 100 ? "bg-rose-500" : "bg-indigo-500"
+                        }`}
+                        style={{ width: `${Math.min(progress, 100)}%` }}
+                      />
+                    </div>
+                    <div className="flex justify-between items-end mt-2">
+                       <span className="text-xs text-zinc-500">
+                          {formatCurrency(effectiveSpent)} spent
+                       </span>
+                       <span className={`text-sm font-semibold ${remaining < 0 ? "text-rose-400" : "text-emerald-400"}`}>
+                          {remaining > 0 ? "+" : ""}{formatCurrency(remaining)} left
+                       </span>
+                    </div>
                   </div>
                 </motion.div>
               );
@@ -721,13 +759,16 @@ export default function App() {
             <motion.button
               whileTap={{ scale: 0.98 }}
               onClick={() => setIsCreatingTrip(true)}
-              className="w-full py-4 border-2 border-dashed border-zinc-800 rounded-2xl text-zinc-500 font-medium flex items-center justify-center gap-2 hover:border-indigo-500/50 hover:text-indigo-400 transition-colors"
+              className="w-full py-4 border-2 border-dashed border-zinc-800 rounded-3xl text-zinc-500 transition-all flex items-center justify-center gap-2 font-medium group"
             >
-              <Plus className="w-5 h-5" /> Create New Trip
+              <div className="w-8 h-8 rounded-full bg-zinc-900 flex items-center justify-center transition-colors">
+                 <Plus className="w-4 h-4" />
+              </div>
+              Create New Trip
             </motion.button>
           </div>
-
-          <div className="mt-12 pt-6 border-t border-zinc-800/50">
+          
+           <div className="mt-12 pt-6 border-t border-zinc-800/50 pb-10">
              <button
               onClick={resetAllData}
               className="w-full py-3 text-rose-500/80 text-sm font-medium flex items-center justify-center gap-2 hover:bg-rose-500/10 rounded-xl transition-colors"
@@ -826,23 +867,71 @@ export default function App() {
     <div className="min-h-screen bg-zinc-950 text-zinc-100 font-sans selection:bg-indigo-500/30">
       <div className="max-w-md mx-auto min-h-screen relative flex flex-col">
         {/* Header */}
-        <header className="px-6 pt-12 pb-6 flex items-center justify-between z-10 sticky top-0 bg-zinc-950/80 backdrop-blur-xl border-b border-zinc-800/50">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight text-zinc-100">
-              {currentTrip?.name || "TripExpense"}
-            </h1>
-            <p className="text-xs font-medium text-zinc-500 mt-1 uppercase tracking-wider">Overview</p>
+        <header className="relative h-56 flex flex-col justify-end p-6 z-10 shrink-0">
+          <div className="absolute inset-0 z-0 overflow-hidden rounded-b-3xl">
+            <img
+              src={coverImage || `https://picsum.photos/seed/${imageSeed || currentTrip?.name || "travel"}/800/600`}
+              alt="Trip Cover"
+              className="w-full h-full object-cover opacity-50"
+            />
+            <div className="absolute inset-0 bg-zinc-950/40" />
+            <div className="absolute top-4 right-4 flex gap-2">
+              <label
+                className="p-2 bg-zinc-900/50 backdrop-blur-md rounded-full text-zinc-300 hover:text-white transition-colors border border-white/10 cursor-pointer"
+                title="Upload Image"
+              >
+                <Upload className="w-4 h-4" />
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      const reader = new FileReader();
+                      reader.onloadend = () => {
+                        setCoverImage(reader.result as string);
+                      };
+                      reader.readAsDataURL(file);
+                    }
+                  }}
+                />
+              </label>
+              <button
+                onClick={() => {
+                  setCoverImage("");
+                  const newSeed = Math.random().toString(36).substring(7);
+                  setImageSeed(newSeed);
+                }}
+                className="p-2 bg-zinc-900/50 backdrop-blur-md rounded-full text-zinc-300 hover:text-white transition-colors border border-white/10"
+                title="Random Image"
+              >
+                <RefreshCw className="w-4 h-4" />
+              </button>
+            </div>
           </div>
-          <button
-            onClick={() => setAppState("trip_selection")}
-            className="px-4 py-2 rounded-full bg-zinc-900 border border-zinc-800 text-xs font-medium text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 transition-all"
-          >
-            Switch Trip
-          </button>
+          <div className="relative z-10 flex justify-between items-end">
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <span className="px-2.5 py-1 rounded-full bg-zinc-900/60 backdrop-blur-md border border-white/10 text-[10px] font-medium text-zinc-300 uppercase tracking-wider">
+                  {activeTab === "dashboard" ? "Overview" : activeTab}
+                </span>
+              </div>
+              <h1 className="text-3xl font-bold tracking-tight text-white">
+                {currentTrip?.name || "TripExpense"}
+              </h1>
+            </div>
+            <button
+              onClick={() => setAppState("trip_selection")}
+              className="px-4 py-2 rounded-full bg-zinc-900/60 backdrop-blur-md border border-white/10 text-xs font-medium text-zinc-300 hover:bg-zinc-800/80 hover:text-white transition-colors"
+            >
+              Switch Trip
+            </button>
+          </div>
         </header>
 
         {/* Main Content */}
-        <main className="flex-1 px-6 pt-6 pb-32 overflow-y-auto no-scrollbar">
+        <main className="flex-1 px-6 pt-6 relative z-20 pb-32 overflow-y-auto no-scrollbar">
           {activeTab === "dashboard" && (
             <DashboardTab
               totalSavingsBalance={totalSavingsBalance}
@@ -854,6 +943,16 @@ export default function App() {
               setIsEditingTrip={setIsEditingTrip}
               totalBudget={totalBudget}
               setTotalBudget={setTotalBudget}
+              platinumTicket={platinumTicket}
+              setPlatinumTicket={setPlatinumTicket}
+              pendingPlatinum={pendingPlatinum}
+              setPendingPlatinum={setPendingPlatinum}
+              flightTotal={flightTotal}
+              setFlightTotal={setFlightTotal}
+              myFlightShare={myFlightShare}
+              setMyFlightShare={setMyFlightShare}
+              stay={stay}
+              setStay={setStay}
               expectedIncoming={expectedIncoming}
               setExpectedIncoming={setExpectedIncoming}
               isEditingSavings={isEditingSavings}
@@ -863,6 +962,7 @@ export default function App() {
               saveFinances={saveFinances}
               customCosts={customCosts}
               setCustomCosts={setCustomCosts}
+              tripName={currentTrip?.name}
             />
           )}
           {activeTab === "expenses" && (
@@ -903,7 +1003,7 @@ export default function App() {
         </main>
 
         {/* Bottom Navigation */}
-        <nav className="fixed bottom-6 left-6 right-6 max-w-[calc(28rem-3rem)] mx-auto bg-zinc-900/90 backdrop-blur-2xl border border-zinc-800/50 rounded-2xl shadow-2xl z-30">
+        <nav className="fixed bottom-6 left-6 right-6 max-w-[calc(28rem-3rem)] mx-auto bg-zinc-900/80 backdrop-blur-xl border border-white/5 rounded-2xl shadow-2xl z-30">
           <div className="flex justify-between items-center p-2">
             <NavButton
               icon={LayoutDashboard}
@@ -957,8 +1057,8 @@ const FixedItem = ({
   isEditing,
   className = "text-zinc-100",
 }: any) => (
-  <div className="flex justify-between items-center">
-    <span className="text-sm text-zinc-500">{label}</span>
+  <div className="flex justify-between items-center py-1">
+    <span className="text-sm text-zinc-500 font-medium">{label}</span>
     {isEditing ? (
       <input
         type="text"
@@ -966,10 +1066,10 @@ const FixedItem = ({
         pattern="[0-9]*"
         value={value}
         onChange={(e) => setter(Number(e.target.value))}
-        className="w-24 bg-zinc-900 border border-zinc-800 rounded-lg px-2 py-1 text-right text-sm text-zinc-100 focus:outline-none focus:border-indigo-500"
+        className="w-28 bg-zinc-950/50 border border-zinc-800 rounded-lg px-3 py-1.5 text-right text-sm text-zinc-100 focus:outline-none focus:border-indigo-500 transition-colors"
       />
     ) : (
-      <span className={`text-sm font-medium ${className}`}>
+      <span className={`text-sm font-semibold tracking-tight ${className}`}>
         {formatCurrency(value)}
       </span>
     )}
@@ -1130,7 +1230,7 @@ const PlannerTab = ({
   return (
     <div className="space-y-6 animate-in fade-in duration-500 pb-40">
       {/* Overview Card */}
-      <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 shadow-sm">
+      <div className="bg-zinc-900/50 border border-zinc-800/50 rounded-3xl p-6 shadow-sm backdrop-blur-sm">
         <div className="flex justify-between items-start mb-6">
           <div>
             <h3 className="text-lg font-semibold text-zinc-100">
@@ -1140,37 +1240,37 @@ const PlannerTab = ({
               Plan your daily spending to stay on track.
             </p>
           </div>
-          <div className="flex items-center gap-1 bg-zinc-950 rounded-lg p-1">
+          <div className="flex items-center gap-1 bg-zinc-950/50 rounded-xl p-1 border border-zinc-800/50">
             <button
               onClick={() => setTripDays(Math.max(1, tripDays - 1))}
-              className="w-6 h-6 flex items-center justify-center text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 rounded-md transition-colors text-xs"
+              className="w-8 h-8 flex items-center justify-center text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 rounded-lg transition-colors text-sm"
             >
               -
             </button>
-            <span className="text-xs font-medium text-zinc-300 w-8 text-center">
+            <span className="text-sm font-medium text-zinc-300 w-10 text-center">
               {tripDays}d
             </span>
             <button
               onClick={() => setTripDays(tripDays + 1)}
-              className="w-6 h-6 flex items-center justify-center text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 rounded-md transition-colors text-xs"
+              className="w-8 h-8 flex items-center justify-center text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 rounded-lg transition-colors text-sm"
             >
               +
             </button>
           </div>
         </div>
 
-        <div className="space-y-4">
+        <div className="space-y-6">
           {/* Progress Bar */}
           <div>
             <div className="flex justify-between text-sm mb-2">
-              <span className="text-zinc-500">Projected Usage</span>
+              <span className="text-zinc-500 font-medium">Projected Usage</span>
               <span
-                className={`font-medium ${remainingBudget < 0 ? "text-rose-400" : "text-emerald-400"}`}
+                className={`font-medium px-2 py-0.5 rounded-md text-xs uppercase tracking-wider ${remainingBudget < 0 ? "bg-rose-500/10 text-rose-400" : "bg-emerald-500/10 text-emerald-400"}`}
               >
                 {remainingBudget < 0 ? "Over Budget" : "Within Budget"}
               </span>
             </div>
-            <div className="h-3 bg-zinc-950 rounded-full overflow-hidden">
+            <div className="h-4 bg-zinc-950 rounded-full overflow-hidden border border-zinc-800/50">
               <motion.div
                 initial={{ width: 0 }}
                 animate={{
@@ -1181,12 +1281,12 @@ const PlannerTab = ({
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4 pt-4 border-t border-zinc-800">
+          <div className="grid grid-cols-2 gap-4 pt-4 border-t border-zinc-800/50">
             <div>
               <p className="text-xs text-zinc-500 uppercase tracking-wider mb-1">
                 Disposable / Day
               </p>
-              <p className="text-xl font-semibold text-zinc-100">
+              <p className="text-2xl font-semibold text-zinc-100 tracking-tight">
                 {formatCurrency(dailyLimit)}
               </p>
             </div>
@@ -1195,7 +1295,7 @@ const PlannerTab = ({
                 Projected Left
               </p>
               <p
-                className={`text-xl font-semibold ${remainingBudget < 0 ? "text-rose-400" : "text-emerald-400"}`}
+                className={`text-2xl font-semibold tracking-tight ${remainingBudget < 0 ? "text-rose-400" : "text-emerald-400"}`}
               >
                 {remainingBudget > 0 ? "+" : ""}
                 {formatCurrency(remainingBudget)}
@@ -1211,7 +1311,7 @@ const PlannerTab = ({
           Daily Allocations
         </h3>
 
-        <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-4 space-y-4 shadow-sm">
+        <div className="bg-zinc-900/50 border border-zinc-800/50 rounded-3xl p-5 space-y-5 shadow-sm backdrop-blur-sm">
           <AllocationInput
             label="Food & Dining"
             icon={Coffee}
@@ -1245,12 +1345,12 @@ const PlannerTab = ({
             bgColor="bg-pink-500/10"
           />
 
-          <div className="pt-4 border-t border-zinc-800 flex justify-between items-center">
-            <span className="text-sm font-medium text-zinc-300">
+          <div className="pt-5 border-t border-zinc-800/50 flex justify-between items-center">
+            <span className="text-sm font-medium text-zinc-400">
               Total Daily Spend
             </span>
             <span
-              className={`text-lg font-bold ${dailyTotal > dailyLimit ? "text-rose-400" : "text-zinc-100"}`}
+              className={`text-xl font-bold tracking-tight ${dailyTotal > dailyLimit ? "text-rose-400" : "text-zinc-100"}`}
             >
               {formatCurrency(dailyTotal)}
             </span>
@@ -1259,7 +1359,7 @@ const PlannerTab = ({
       </div>
 
       {/* Expenses Breakdown Chart */}
-      <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 shadow-sm">
+      <div className="bg-zinc-900/50 border border-zinc-800/50 rounded-3xl p-6 shadow-sm backdrop-blur-sm">
         <h3 className="text-sm font-semibold text-zinc-500 uppercase tracking-wider mb-4 flex items-center gap-2">
           <Receipt className="w-4 h-4" /> Expenses Breakdown
         </h3>
@@ -1277,29 +1377,33 @@ const PlannerTab = ({
                   fill="#8884d8"
                   paddingAngle={5}
                   dataKey="value"
+                  stroke="none"
                 >
                   {chartData.map((entry: any, index: number) => (
                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                   ))}
                 </Pie>
                 <Tooltip 
-                  contentStyle={{ backgroundColor: '#18181b', borderColor: '#27272a', borderRadius: '0.75rem' }}
+                  contentStyle={{ backgroundColor: '#18181b', borderColor: '#27272a', borderRadius: '0.75rem', fontSize: '12px' }}
                   itemStyle={{ color: '#e4e4e7' }}
                   formatter={(value: number) => formatCurrency(value)}
                 />
                 <Legend 
                   verticalAlign="bottom" 
                   height={36}
-                  formatter={(value) => <span className="text-zinc-400 text-xs ml-1">{value}</span>}
+                  iconType="circle"
+                  formatter={(value) => <span className="text-zinc-400 text-xs ml-1 font-medium">{value}</span>}
                 />
               </PieChart>
             </ResponsiveContainer>
           </div>
         ) : (
           <div className="flex flex-col items-center justify-center h-48 text-zinc-500">
-            <Receipt className="w-8 h-8 mb-2 opacity-50" />
-            <p className="text-sm">No expenses added yet.</p>
-            <p className="text-xs mt-1">Add expenses in the Expenses tab to see the breakdown.</p>
+            <div className="w-12 h-12 rounded-full bg-zinc-800/50 flex items-center justify-center mb-3">
+              <Receipt className="w-6 h-6 opacity-50" />
+            </div>
+            <p className="text-sm font-medium">No expenses added yet.</p>
+            <p className="text-xs mt-1 text-zinc-600">Add expenses to see the breakdown.</p>
           </div>
         )}
       </div>
@@ -1317,7 +1421,7 @@ const AllocationInput = ({
 }: any) => (
   <div className="flex items-center gap-4">
     <div
-      className={`w-10 h-10 rounded-2xl flex items-center justify-center ${bgColor} ${color}`}
+      className={`w-10 h-10 rounded-2xl flex items-center justify-center ${bgColor} ${color} border border-white/5`}
     >
       <Icon className="w-5 h-5" />
     </div>
@@ -1330,17 +1434,17 @@ const AllocationInput = ({
         step="100"
         value={value}
         onChange={(e) => setter(Number(e.target.value))}
-        className="w-full h-1.5 bg-zinc-800 rounded-full appearance-none accent-indigo-500 mt-2"
+        className="w-full h-1.5 bg-zinc-800 rounded-full appearance-none accent-indigo-500 mt-2 cursor-pointer"
       />
     </div>
-    <div className="w-20">
+    <div className="w-24">
       <input
         type="text"
         inputMode="numeric"
         pattern="[0-9]*"
         value={value}
         onChange={(e) => setter(Number(e.target.value))}
-        className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-2 py-2 text-right text-sm text-zinc-100 focus:outline-none focus:border-indigo-500"
+        className="w-full bg-zinc-950/50 border border-zinc-800 rounded-xl px-3 py-2 text-right text-sm text-zinc-100 focus:outline-none focus:border-indigo-500 transition-colors"
       />
     </div>
   </div>
@@ -1490,11 +1594,12 @@ const ExploreTab = ({ places, setPlaces, schedule, setSchedule, getHeaders, trip
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-40">
       {/* Map View */}
-      <div className="bg-zinc-900 border border-zinc-800 rounded-3xl overflow-hidden h-64 md:h-80 relative z-0">
+      <div className="bg-zinc-900/50 border border-zinc-800/50 rounded-[2rem] overflow-hidden h-72 md:h-80 relative z-0 shadow-lg">
          <MapContainer center={[28.6139, 77.2090]} zoom={11} style={{ height: "100%", width: "100%" }}>
             <TileLayer
               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              className="opacity-90"
             />
             <MapUpdater items={places} />
             {places.map((place: Place) => {
@@ -1507,7 +1612,7 @@ const ExploreTab = ({ places, setPlaces, schedule, setSchedule, getHeaders, trip
                   position={[place.lat, place.lng]}
                   icon={getCategoryIcon(place.category)}
                 >
-                  <Popup>
+                  <Popup className="custom-popup">
                     <div className="text-zinc-900 min-w-[150px]">
                       <h3 className="font-bold text-sm">{place.title}</h3>
                       <span className="text-xs font-semibold text-zinc-500 bg-zinc-100 px-1.5 py-0.5 rounded-md border border-zinc-200 inline-block mb-1">
@@ -1542,18 +1647,18 @@ const ExploreTab = ({ places, setPlaces, schedule, setSchedule, getHeaders, trip
       </div>
 
       {/* Trip Timeline */}
-      <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6">
-        <h3 className="text-lg font-semibold text-zinc-100 mb-4 flex items-center gap-2">
+      <div className="bg-zinc-900/50 border border-zinc-800/50 rounded-3xl p-6 backdrop-blur-sm">
+        <h3 className="text-lg font-semibold text-zinc-100 mb-6 flex items-center gap-2">
           <Calendar className="w-5 h-5 text-indigo-400" /> Trip Timeline
         </h3>
         
         {/* Add Schedule Form */}
-        <form onSubmit={handleAddSchedule} className="space-y-3 mb-6 bg-zinc-950 p-4 rounded-2xl border border-zinc-800">
+        <form onSubmit={handleAddSchedule} className="space-y-3 mb-8 bg-zinc-950/50 p-4 rounded-2xl border border-zinc-800/50">
           <div className="grid grid-cols-1 gap-3">
             <select
               value={schedulePlaceId}
               onChange={(e) => setSchedulePlaceId(e.target.value)}
-              className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500 appearance-none"
+              className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500 appearance-none transition-colors"
               required
             >
               <option value="">Select a Place...</option>
@@ -1564,14 +1669,14 @@ const ExploreTab = ({ places, setPlaces, schedule, setSchedule, getHeaders, trip
             </select>
 
             {schedulePlaceId === "NEW" && (
-              <div className="space-y-3 p-3 bg-zinc-900 rounded-xl border border-zinc-800 animate-in fade-in slide-in-from-top-2">
+              <div className="space-y-3 p-3 bg-zinc-900/50 rounded-xl border border-zinc-800/50 animate-in fade-in slide-in-from-top-2">
                  <input
                   type="text"
                   required
                   value={newPlaceTitle}
                   onChange={(e) => setNewPlaceTitle(e.target.value)}
                   placeholder="Place Name (e.g. Red Fort)"
-                  className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500 transition-colors"
                 />
                  <div className="grid grid-cols-2 gap-2">
                   {[
@@ -1603,14 +1708,14 @@ const ExploreTab = ({ places, setPlaces, schedule, setSchedule, getHeaders, trip
                 type="date"
                 value={scheduleDate}
                 onChange={(e) => setScheduleDate(e.target.value)}
-                className="flex-1 bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500"
+                className="flex-1 bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500 transition-colors"
                 required
               />
               <input
                 type="time"
                 value={scheduleTime}
                 onChange={(e) => setScheduleTime(e.target.value)}
-                className="flex-1 bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500"
+                className="flex-1 bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500 transition-colors"
                 required
               />
             </div>
@@ -1619,11 +1724,11 @@ const ExploreTab = ({ places, setPlaces, schedule, setSchedule, getHeaders, trip
               value={scheduleNotes}
               onChange={(e) => setScheduleNotes(e.target.value)}
               placeholder="Notes (optional)"
-              className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500"
+              className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500 transition-colors"
             />
             <button
               type="submit"
-              className="w-full bg-indigo-500 hover:bg-indigo-600 text-white py-3 rounded-xl font-semibold transition-colors text-sm"
+              className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-3 rounded-xl font-semibold transition-all text-sm shadow-lg shadow-indigo-500/20"
             >
               Add to Schedule
             </button>
@@ -1631,27 +1736,32 @@ const ExploreTab = ({ places, setPlaces, schedule, setSchedule, getHeaders, trip
         </form>
 
         {/* Timeline View */}
-        <div className="relative pl-4 border-l-2 border-zinc-800 space-y-6">
+        <div className="relative pl-6 border-l border-zinc-800 space-y-8 ml-2">
           {schedule.length === 0 && (
             <p className="text-sm text-zinc-500 italic pl-2">No schedule items added yet.</p>
           )}
           {schedule.map((item: ScheduleItem) => (
-            <div key={item.id} className="relative pl-4 group">
+            <div key={item.id} className="relative pl-6 group">
               {/* Dot */}
-              <div className="absolute -left-[21px] top-1.5 w-3 h-3 rounded-full bg-indigo-500 border-2 border-zinc-950" />
+              <div className="absolute -left-[31px] top-2 w-4 h-4 rounded-full bg-zinc-950 border-4 border-indigo-500 shadow-[0_0_0_4px_rgba(99,102,241,0.1)]" />
               
-              <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-3 hover:border-indigo-500/30 transition-colors">
+              <div className="bg-zinc-900/50 border border-zinc-800/50 rounded-2xl p-4 transition-all">
                 <div className="flex justify-between items-start">
                   <div>
-                    <h4 className="font-medium text-zinc-100 text-sm">{item.place_title}</h4>
-                    <p className="text-xs text-zinc-400 mt-0.5">{item.date} • {item.time}</p>
-                    {item.notes && <p className="text-xs text-zinc-500 mt-1 italic">"{item.notes}"</p>}
+                    <h4 className="font-semibold text-zinc-100 text-base">{item.place_title}</h4>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-xs font-medium text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded-md border border-indigo-500/20">
+                        {item.time}
+                      </span>
+                      <span className="text-xs text-zinc-500">{item.date}</span>
+                    </div>
+                    {item.notes && <p className="text-sm text-zinc-400 mt-2 italic border-l-2 border-zinc-700 pl-3">"{item.notes}"</p>}
                   </div>
                   <button
                     onClick={() => handleDeleteSchedule(item.id)}
-                    className="text-zinc-600 hover:text-rose-500 transition-colors p-1"
+                    className="text-zinc-600 hover:text-rose-500 transition-colors p-2 hover:bg-rose-500/10 rounded-lg"
                   >
-                    <Trash2 className="w-3 h-3" />
+                    <Trash2 className="w-4 h-4" />
                   </button>
                 </div>
               </div>
@@ -1714,12 +1824,12 @@ const ExploreTab = ({ places, setPlaces, schedule, setSchedule, getHeaders, trip
           {hotspots.map((spot: Place) => (
             <div
               key={spot.id}
-              className="px-4 py-2 bg-zinc-900/50 border border-zinc-800/50 rounded-full text-sm text-zinc-300 flex items-center gap-2 group"
+              className="px-4 py-2 bg-zinc-900/50 border border-zinc-800/50 rounded-full text-sm text-zinc-300 flex items-center gap-2"
             >
               {spot.title}
               <button
                 onClick={() => handleDeletePlace(spot.id)}
-                className="text-zinc-500 hover:text-rose-400 opacity-0 group-hover:opacity-100 transition-opacity"
+                className="text-zinc-500 hover:text-rose-400 transition-colors"
               >
                 <X className="w-3 h-3" />
               </button>
@@ -1903,102 +2013,104 @@ const ExpensesTab = ({
         <h3 className="text-sm font-semibold text-zinc-500 uppercase tracking-wider mb-4 pl-2">
           Recent Activity
         </h3>
-        <div className="space-y-3">
+        <div className="bg-zinc-900/50 border border-zinc-800/50 rounded-3xl overflow-hidden backdrop-blur-sm">
           {filteredExpenses.length === 0 && filteredIncomes.length === 0 && (
-            <p className="text-zinc-500 text-center py-8 text-sm">
+            <p className="text-zinc-500 text-center py-12 text-sm">
               No recent activity.
             </p>
           )}
 
-          {filteredIncomes.map((inc: Income) => (
-            <div
-              key={inc.id}
-              className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 flex items-center justify-between shadow-sm"
-            >
-              <div className="flex items-center gap-4">
-                <div className="w-10 h-10 rounded-full bg-emerald-500/10 text-emerald-400 flex items-center justify-center">
-                  <ArrowDownRight className="w-5 h-5" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <p className="text-sm font-medium text-zinc-100">
-                      {inc.title}
-                    </p>
-                    {filter === "all" && (
-                      <span
-                        className={`text-[9px] px-1.5 py-0.5 rounded uppercase font-bold tracking-wider ${inc.accountId === "trip" ? "bg-indigo-500/20 text-indigo-400" : "bg-emerald-500/20 text-emerald-400"}`}
-                      >
-                        {inc.accountId === "trip" ? tripName || "Trip" : inc.accountId}
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-xs text-zinc-500 mt-0.5">
-                    {inc.category} • {inc.date}
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <span className="text-emerald-400 font-semibold">
-                  +{formatCurrency(inc.amount)}
-                </span>
-                <button
-                  onClick={() => handleDeleteIncome(inc.id)}
-                  className="p-1.5 text-zinc-600 hover:text-rose-500 transition-colors"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-          ))}
-
-          {filteredExpenses.map((exp: Expense) => {
-            const cat = EXPENSE_CATEGORIES.find(
-              (c) => c.name === exp.category,
-            )!;
-            const Icon = cat.icon;
-            return (
+          <div className="divide-y divide-zinc-800/50">
+            {filteredIncomes.map((inc: Income) => (
               <div
-                key={exp.id}
-                className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 flex items-center justify-between shadow-sm"
+                key={inc.id}
+                className="p-4 flex items-center justify-between border-b border-zinc-800/50 last:border-0"
               >
                 <div className="flex items-center gap-4">
-                  <div
-                    className={`w-10 h-10 rounded-full flex items-center justify-center ${cat.color} bg-opacity-10 border border-current border-opacity-20`}
-                  >
-                    <Icon className="w-5 h-5" />
+                  <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center border border-emerald-500/20">
+                    <ArrowDownRight className="w-5 h-5" />
                   </div>
                   <div>
                     <div className="flex items-center gap-2">
                       <p className="text-sm font-medium text-zinc-100">
-                        {exp.title}
+                        {inc.title}
                       </p>
                       {filter === "all" && (
                         <span
-                          className={`text-[9px] px-1.5 py-0.5 rounded uppercase font-bold tracking-wider ${exp.accountId === "trip" ? "bg-indigo-500/20 text-indigo-400" : "bg-emerald-500/20 text-emerald-400"}`}
+                          className={`text-[9px] px-1.5 py-0.5 rounded uppercase font-bold tracking-wider ${inc.accountId === "trip" ? "bg-indigo-500/20 text-indigo-400" : "bg-emerald-500/20 text-emerald-400"}`}
                         >
-                          {exp.accountId === "trip" ? tripName || "Trip" : exp.accountId}
+                          {inc.accountId === "trip" ? tripName || "Trip" : inc.accountId}
                         </span>
                       )}
                     </div>
                     <p className="text-xs text-zinc-500 mt-0.5">
-                      {exp.category} • {exp.time}
+                      {inc.category} • {inc.date}
                     </p>
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
-                  <span className="text-zinc-100 font-semibold">
-                    -{formatCurrency(exp.amount)}
+                  <span className="text-emerald-400 font-semibold tracking-tight">
+                    +{formatCurrency(inc.amount)}
                   </span>
                   <button
-                    onClick={() => handleDeleteExpense(exp.id)}
-                    className="p-1.5 text-zinc-600 hover:text-rose-500 transition-colors"
+                    onClick={() => handleDeleteIncome(inc.id)}
+                    className="p-2 text-zinc-600 hover:text-rose-500 hover:bg-rose-500/10 rounded-lg transition-all"
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
                 </div>
               </div>
-            );
-          })}
+            ))}
+
+            {filteredExpenses.map((exp: Expense) => {
+              const cat = EXPENSE_CATEGORIES.find(
+                (c) => c.name === exp.category,
+              )!;
+              const Icon = cat.icon;
+              return (
+                <div
+                  key={exp.id}
+                  className="p-4 flex items-center justify-between border-b border-zinc-800/50 last:border-0"
+                >
+                  <div className="flex items-center gap-4">
+                    <div
+                      className={`w-10 h-10 rounded-2xl flex items-center justify-center ${cat.color} bg-opacity-10 border border-current border-opacity-20`}
+                    >
+                      <Icon className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-medium text-zinc-100">
+                          {exp.title}
+                        </p>
+                        {filter === "all" && (
+                          <span
+                            className={`text-[9px] px-1.5 py-0.5 rounded uppercase font-bold tracking-wider ${exp.accountId === "trip" ? "bg-indigo-500/20 text-indigo-400" : "bg-emerald-500/20 text-emerald-400"}`}
+                          >
+                            {exp.accountId === "trip" ? tripName || "Trip" : exp.accountId}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-zinc-500 mt-0.5">
+                        {exp.category} • {exp.time}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-zinc-100 font-semibold tracking-tight">
+                      -{formatCurrency(exp.amount)}
+                    </span>
+                    <button
+                      onClick={() => handleDeleteExpense(exp.id)}
+                      className="p-2 text-zinc-600 hover:text-rose-500 hover:bg-rose-500/10 rounded-lg transition-all"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
 
@@ -2171,99 +2283,119 @@ const DashboardTab = ({
 }: any) => (
   <div className="space-y-6 animate-in fade-in duration-500 pb-40">
     {/* Savings Overview */}
-    <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-5 shadow-sm flex justify-between items-center">
+    <div className="bg-zinc-900/50 border border-zinc-800/50 rounded-3xl p-6 shadow-sm flex justify-between items-center backdrop-blur-sm">
       <div>
         <p className="text-zinc-500 text-xs font-medium uppercase tracking-wider mb-1">
           Total Savings
         </p>
-        <h2 className="text-2xl font-semibold text-emerald-400">
+        <h2 className="text-3xl font-bold text-emerald-400 tracking-tight">
           {formatCurrency(totalSavingsBalance)}
         </h2>
       </div>
-      <div className="w-10 h-10 rounded-full bg-emerald-500/10 flex items-center justify-center">
-        <Wallet className="w-5 h-5 text-emerald-400" />
+      <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20">
+        <Wallet className="w-6 h-6 text-emerald-400" />
       </div>
     </div>
 
     {/* Trip Overview */}
-    <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 shadow-sm">
-      <div className="flex justify-between items-start mb-4">
-        <div>
-          <p className="text-zinc-500 text-sm font-medium mb-1">
-            Trip Balance
-          </p>
-          <h2 className="text-4xl font-semibold text-zinc-100 tracking-tight">
-            {formatCurrency(tripRemainingBalance)}
-          </h2>
-        </div>
-        <div className="w-10 h-10 rounded-full bg-indigo-500/10 flex items-center justify-center">
-          <MapPin className="w-5 h-5 text-indigo-400" />
-        </div>
+    <div className="bg-zinc-900/50 border border-zinc-800/50 rounded-3xl p-6 shadow-sm backdrop-blur-sm relative overflow-hidden">
+      <div className="absolute top-0 right-0 p-6 opacity-10">
+        <MapPin className="w-24 h-24 text-indigo-500 transform rotate-12 translate-x-4 -translate-y-4" />
       </div>
-      <div className="flex items-center gap-2 text-sm">
-        <span className="text-indigo-400 bg-indigo-500/10 px-2 py-1 rounded-lg font-medium">
-          {formatCurrency(safeDailySpend)} / day
-        </span>
-        <span className="text-zinc-500">safe spend</span>
+      <div className="relative z-10">
+        <div className="flex justify-between items-start mb-4">
+          <div>
+            <p className="text-zinc-500 text-sm font-medium mb-1">
+              Trip Balance
+            </p>
+            <h2 className="text-5xl font-bold text-zinc-100 tracking-tighter">
+              {formatCurrency(tripRemainingBalance)}
+            </h2>
+          </div>
+        </div>
+        <div className="flex items-center gap-3 text-sm">
+          <div className="flex items-center gap-1.5 text-indigo-400 bg-indigo-500/10 px-3 py-1.5 rounded-xl font-medium border border-indigo-500/20">
+            <span>{formatCurrency(safeDailySpend)}</span>
+            <span className="text-indigo-400/70 text-xs">/ day</span>
+          </div>
+          <span className="text-zinc-500 text-xs">safe spend</span>
+        </div>
       </div>
     </div>
 
     {/* Trip Stats */}
     <div className="grid grid-cols-2 gap-4">
-      <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-5 shadow-sm">
-        <div className="flex items-center gap-2 text-zinc-500 mb-2">
-          <ArrowUpRight className="w-4 h-4 text-rose-400" />
+      <div className="bg-zinc-900/50 border border-zinc-800/50 rounded-3xl p-5 shadow-sm backdrop-blur-sm">
+        <div className="flex items-center gap-2 text-zinc-500 mb-3">
+          <div className="p-1.5 rounded-lg bg-rose-500/10 text-rose-400">
+            <ArrowUpRight className="w-4 h-4" />
+          </div>
           <span className="text-xs font-medium uppercase tracking-wider">
-            Trip Spent
+            Spent
           </span>
         </div>
-        <p className="text-xl font-semibold text-zinc-100">
+        <p className="text-2xl font-semibold text-zinc-100 tracking-tight">
           {formatCurrency(tripEffectiveSpent)}
         </p>
       </div>
 
-      <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-5 shadow-sm">
-        <div className="flex items-center gap-2 text-zinc-500 mb-2">
-          <ArrowDownRight className="w-4 h-4 text-emerald-400" />
+      <div className="bg-zinc-900/50 border border-zinc-800/50 rounded-3xl p-5 shadow-sm backdrop-blur-sm">
+        <div className="flex items-center gap-2 text-zinc-500 mb-3">
+          <div className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-400">
+            <ArrowDownRight className="w-4 h-4" />
+          </div>
           <span className="text-xs font-medium uppercase tracking-wider">
-            Trip In
+            Incoming
           </span>
         </div>
-        <p className="text-xl font-semibold text-zinc-100">
+        <p className="text-2xl font-semibold text-zinc-100 tracking-tight">
           {formatCurrency(tripTotalIncoming)}
         </p>
       </div>
     </div>
 
     {/* Trip Finances */}
-    <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 shadow-sm">
+    <div className="bg-zinc-900/50 border border-zinc-800/50 rounded-3xl p-6 shadow-sm backdrop-blur-sm">
       <div className="flex items-center justify-between mb-6">
-        <h3 className="text-lg font-semibold text-zinc-100">
-          {tripName || "Trip"} Finances
-        </h3>
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-zinc-800/50 flex items-center justify-center text-zinc-400">
+            <Receipt className="w-5 h-5" />
+          </div>
+          <div>
+            <h3 className="text-lg font-semibold text-zinc-100 leading-none">
+              Finances
+            </h3>
+            <p className="text-xs text-zinc-500 mt-1">Manage trip budget</p>
+          </div>
+        </div>
         <button
           onClick={() => {
             if (isEditingTrip) saveFinances();
             setIsEditingTrip(!isEditingTrip);
           }}
-          className="p-2 bg-zinc-800 hover:bg-zinc-700 rounded-full text-zinc-400 transition-colors"
+          className={`p-2.5 rounded-xl transition-all ${
+            isEditingTrip
+              ? "bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30"
+              : "bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200"
+          }`}
         >
           {isEditingTrip ? (
-            <Check className="w-4 h-4 text-emerald-400" />
+            <Check className="w-4 h-4" />
           ) : (
             <Edit2 className="w-4 h-4" />
           )}
         </button>
       </div>
 
-      <div className="space-y-4">
+      <div className="space-y-1">
         <FixedItem
           label="Total Budget"
           value={totalBudget}
           setter={setTotalBudget}
           isEditing={isEditingTrip}
+          className="text-xl"
         />
-        <div className="h-px bg-zinc-800/50 my-2" />
+        <div className="h-px bg-zinc-800/50 my-3" />
         <FixedItem
           label="Ticket Cost"
           value={platinumTicket}
@@ -2298,7 +2430,7 @@ const DashboardTab = ({
 
         {/* Custom Costs */}
         {customCosts.map((cost: any, index: number) => (
-          <div key={cost.id} className="flex justify-between items-center">
+          <div key={cost.id} className="flex justify-between items-center py-2">
             {isEditingTrip ? (
               <div className="flex gap-2 w-full items-center">
                 <input
@@ -2309,7 +2441,7 @@ const DashboardTab = ({
                     newCosts[index].label = e.target.value;
                     setCustomCosts(newCosts);
                   }}
-                  className="flex-1 bg-zinc-900 border border-zinc-800 rounded-lg px-2 py-1 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500"
+                  className="flex-1 bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500 transition-colors"
                   placeholder="Label"
                 />
                 <input
@@ -2320,7 +2452,7 @@ const DashboardTab = ({
                     newCosts[index].amount = Number(e.target.value);
                     setCustomCosts(newCosts);
                   }}
-                  className="w-20 bg-zinc-900 border border-zinc-800 rounded-lg px-2 py-1 text-right text-sm text-zinc-100 focus:outline-none focus:border-indigo-500"
+                  className="w-24 bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-right text-sm text-zinc-100 focus:outline-none focus:border-indigo-500 transition-colors"
                   placeholder="0"
                 />
                 <button
@@ -2330,7 +2462,7 @@ const DashboardTab = ({
                     );
                     setCustomCosts(newCosts);
                   }}
-                  className="p-1 text-zinc-500 hover:text-rose-500"
+                  className="p-2 text-zinc-500 hover:text-rose-500 hover:bg-rose-500/10 rounded-lg transition-colors"
                 >
                   <Trash2 className="w-4 h-4" />
                 </button>
@@ -2354,38 +2486,50 @@ const DashboardTab = ({
                 { id: Date.now().toString(), label: "New Cost", amount: 0 },
               ])
             }
-            className="w-full py-2 border border-dashed border-zinc-700 rounded-xl text-xs text-zinc-400 hover:text-zinc-200 hover:border-zinc-500 transition-colors"
+            className="w-full py-3 mt-2 border border-dashed border-zinc-700 rounded-xl text-xs font-medium text-zinc-400 hover:text-zinc-200 hover:border-zinc-500 hover:bg-zinc-800/50 transition-all"
           >
             + Add Fixed Cost
           </button>
         )}
 
-        <div className="h-px bg-zinc-800/50 my-2" />
+        <div className="h-px bg-zinc-800/50 my-3" />
         <FixedItem
           label="Expected Incoming"
           value={expectedIncoming}
           setter={setExpectedIncoming}
           isEditing={isEditingTrip}
-          className="text-emerald-400"
+          className="text-emerald-400 font-bold"
         />
       </div>
     </div>
 
     {/* Savings Finances */}
-    <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 shadow-sm">
+    <div className="bg-zinc-900/50 border border-zinc-800/50 rounded-3xl p-6 shadow-sm backdrop-blur-sm">
       <div className="flex items-center justify-between mb-6">
-        <h3 className="text-lg font-semibold text-zinc-100">
-          Savings Finances
-        </h3>
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-zinc-800/50 flex items-center justify-center text-zinc-400">
+            <Wallet className="w-5 h-5" />
+          </div>
+          <div>
+            <h3 className="text-lg font-semibold text-zinc-100 leading-none">
+              Savings
+            </h3>
+            <p className="text-xs text-zinc-500 mt-1">Manage savings</p>
+          </div>
+        </div>
         <button
           onClick={() => {
             if (isEditingSavings) saveFinances();
             setIsEditingSavings(!isEditingSavings);
           }}
-          className="p-2 bg-zinc-800 hover:bg-zinc-700 rounded-full text-zinc-400 transition-colors"
+          className={`p-2.5 rounded-xl transition-all ${
+            isEditingSavings
+              ? "bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30"
+              : "bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200"
+          }`}
         >
           {isEditingSavings ? (
-            <Check className="w-4 h-4 text-emerald-400" />
+            <Check className="w-4 h-4" />
           ) : (
             <Edit2 className="w-4 h-4" />
           )}
@@ -2398,7 +2542,7 @@ const DashboardTab = ({
           value={baseSavings}
           setter={setBaseSavings}
           isEditing={isEditingSavings}
-          className="text-emerald-400"
+          className="text-emerald-400 font-bold"
         />
       </div>
     </div>

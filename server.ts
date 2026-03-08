@@ -111,6 +111,8 @@ const initDb = async () => {
     await client.query(`
       ALTER TABLE trips ADD COLUMN IF NOT EXISTS duration INTEGER DEFAULT 3;
       ALTER TABLE trips ADD COLUMN IF NOT EXISTS custom_costs JSONB DEFAULT '[]';
+      ALTER TABLE trips ADD COLUMN IF NOT EXISTS image_seed TEXT;
+      ALTER TABLE trips ADD COLUMN IF NOT EXISTS cover_image TEXT;
       ALTER TABLE places ADD COLUMN IF NOT EXISTS lat FLOAT;
       ALTER TABLE places ADD COLUMN IF NOT EXISTS lng FLOAT;
       ALTER TABLE places ADD COLUMN IF NOT EXISTS rating FLOAT;
@@ -131,7 +133,7 @@ async function startServer() {
   const PORT = Number(process.env.PORT) || 3000;
 
   app.use(cors());
-  app.use(express.json());
+  app.use(express.json({ limit: '10mb' }));
 
   // --- Middleware ---
   const authenticate = (req: any, res: any, next: any) => {
@@ -199,6 +201,8 @@ async function startServer() {
           t.expectedIncoming as "expectedIncoming", 
           t.baseSavings as "baseSavings",
           t.duration,
+          t.image_seed as "imageSeed",
+          t.cover_image as "coverImage",
           t.custom_costs as "customCosts",
           COALESCE((SELECT SUM(amount) FROM expenses WHERE trip_id = t.id AND accountId = 'trip'), 0) as "tripDynamicSpent",
           COALESCE((SELECT SUM(amount) FROM incomes WHERE trip_id = t.id AND accountId = 'trip'), 0) as "tripDynamicIncome"
@@ -250,6 +254,8 @@ async function startServer() {
           expectedIncoming as "expectedIncoming", 
           baseSavings as "baseSavings",
           duration,
+          image_seed as "imageSeed",
+          cover_image as "coverImage",
           custom_costs as "customCosts"
         FROM trips WHERE id = $1 AND user_id = $2
       `, [id, req.userId]);
@@ -294,6 +300,8 @@ async function startServer() {
       expectedIncoming,
       baseSavings,
       customCosts,
+      imageSeed,
+      coverImage,
     } = req.body;
 
     try {
@@ -301,8 +309,9 @@ async function startServer() {
         UPDATE trips SET 
           totalBudget = $1, platinumTicket = $2, pendingPlatinum = $3, 
           flightTotal = $4, myFlightShare = $5, stay = $6, 
-          expectedIncoming = $7, baseSavings = $8, custom_costs = $9
-        WHERE id = $10 AND user_id = $11
+          expectedIncoming = $7, baseSavings = $8, custom_costs = $9,
+          image_seed = $10, cover_image = $11
+        WHERE id = $12 AND user_id = $13
       `, [
         totalBudget,
         platinumTicket,
@@ -313,6 +322,8 @@ async function startServer() {
         expectedIncoming,
         baseSavings,
         JSON.stringify(customCosts || []),
+        imageSeed || null,
+        coverImage || null,
         id,
         req.userId,
       ]);
