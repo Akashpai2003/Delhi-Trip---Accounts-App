@@ -30,7 +30,82 @@ import {
   RotateCcw,
   UtensilsCrossed,
   Camera,
+  Star,
+  Plane,
 } from "lucide-react";
+import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
+import { renderToStaticMarkup } from "react-dom/server";
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from "recharts";
+import "leaflet/dist/leaflet.css";
+import L from "leaflet";
+
+// Fix Leaflet icon issue
+delete (L.Icon.Default.prototype as any)._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png",
+  iconUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png",
+  shadowUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png",
+});
+
+const getCategoryIcon = (category: PlaceCategory) => {
+  let Icon = Coffee;
+  let colorClass = "text-orange-600";
+  let bgClass = "bg-orange-100";
+  let borderClass = "border-orange-600";
+
+  switch (category) {
+    case "Street Food":
+      Icon = Coffee;
+      colorClass = "text-orange-600";
+      bgClass = "bg-orange-100";
+      borderClass = "border-orange-600";
+      break;
+    case "Casual Dining":
+      Icon = UtensilsCrossed;
+      colorClass = "text-blue-600";
+      bgClass = "bg-blue-100";
+      borderClass = "border-blue-600";
+      break;
+    case "Premium":
+      Icon = Wine;
+      colorClass = "text-purple-600";
+      bgClass = "bg-purple-100";
+      borderClass = "border-purple-600";
+      break;
+    case "Hotspot":
+      Icon = Camera;
+      colorClass = "text-emerald-600";
+      bgClass = "bg-emerald-100";
+      borderClass = "border-emerald-600";
+      break;
+  }
+
+  return L.divIcon({
+    className: "custom-icon",
+    html: renderToStaticMarkup(
+      <div className={`w-8 h-8 rounded-full ${bgClass} ${borderClass} border-2 flex items-center justify-center shadow-md`}>
+        <Icon className={`w-4 h-4 ${colorClass}`} />
+      </div>
+    ),
+    iconSize: [32, 32],
+    iconAnchor: [16, 16],
+    popupAnchor: [0, -16],
+  });
+};
+
+const MapUpdater = ({ items }: { items: any[] }) => {
+  const map = useMap();
+  useEffect(() => {
+    const validItems = items.filter(i => i.lat && i.lng);
+    if (validItems.length > 0) {
+      const bounds = L.latLngBounds(validItems.map(i => [i.lat!, i.lng!]));
+      if (bounds.isValid()) {
+        map.fitBounds(bounds, { padding: [50, 50] });
+      }
+    }
+  }, [items, map]);
+  return null;
+};
 
 // --- Types ---
 type Tab = "dashboard" | "expenses" | "planner" | "explore";
@@ -94,6 +169,9 @@ interface Place {
   trip_id: string;
   title: string;
   category: PlaceCategory;
+  lat?: number;
+  lng?: number;
+  rating?: number;
 }
 
 interface ScheduleItem {
@@ -105,6 +183,9 @@ interface ScheduleItem {
   notes?: string;
   place_title: string;
   place_category: PlaceCategory;
+  place_lat?: number;
+  place_lng?: number;
+  place_rating?: number;
 }
 
 // --- Constants ---
@@ -750,18 +831,18 @@ export default function App() {
             <h1 className="text-2xl font-bold tracking-tight text-zinc-100">
               {currentTrip?.name || "TripExpense"}
             </h1>
-            <p className="text-sm text-zinc-500 mt-0.5">Overview</p>
+            <p className="text-xs font-medium text-zinc-500 mt-1 uppercase tracking-wider">Overview</p>
           </div>
           <button
             onClick={() => setAppState("trip_selection")}
-            className="px-3 py-1.5 rounded-full bg-zinc-900 border border-zinc-800 text-xs font-medium text-zinc-400 hover:bg-zinc-800 transition-colors"
+            className="px-4 py-2 rounded-full bg-zinc-900 border border-zinc-800 text-xs font-medium text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 transition-all"
           >
             Switch Trip
           </button>
         </header>
 
         {/* Main Content */}
-        <main className="flex-1 px-6 pt-6 overflow-y-auto no-scrollbar">
+        <main className="flex-1 px-6 pt-6 pb-32 overflow-y-auto no-scrollbar">
           {activeTab === "dashboard" && (
             <DashboardTab
               totalSavingsBalance={totalSavingsBalance}
@@ -804,7 +885,9 @@ export default function App() {
               totalBudget={totalBudget}
               expectedIncoming={expectedIncoming}
               customCosts={customCosts}
+              setCustomCosts={setCustomCosts}
               duration={currentTrip?.duration}
+              expenses={expenses}
             />
           )}
           {activeTab === "explore" && (
@@ -820,8 +903,8 @@ export default function App() {
         </main>
 
         {/* Bottom Navigation */}
-        <nav className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-zinc-950/90 backdrop-blur-xl border-t border-zinc-800/50 pb-safe pt-2 px-6 z-30">
-          <div className="flex justify-between items-center pb-4">
+        <nav className="fixed bottom-6 left-6 right-6 max-w-[calc(28rem-3rem)] mx-auto bg-zinc-900/90 backdrop-blur-2xl border border-zinc-800/50 rounded-2xl shadow-2xl z-30">
+          <div className="flex justify-between items-center p-2">
             <NavButton
               icon={LayoutDashboard}
               label="Home"
@@ -856,14 +939,14 @@ export default function App() {
 const NavButton = ({ icon: Icon, label, isActive, onClick }: any) => (
   <button
     onClick={onClick}
-    className={`flex flex-col items-center gap-1.5 p-2 transition-colors ${isActive ? "text-indigo-400" : "text-zinc-500 hover:text-zinc-300"}`}
+    className={`flex-1 flex flex-col items-center gap-1 p-2 rounded-xl transition-all duration-300 ${isActive ? "text-indigo-400" : "text-zinc-500 hover:text-zinc-300"}`}
   >
     <div
-      className={`relative p-1.5 rounded-xl transition-all ${isActive ? "bg-indigo-500/10 text-indigo-400" : "bg-transparent"}`}
+      className={`relative p-2 rounded-xl transition-all duration-300 ${isActive ? "bg-indigo-500/10" : "bg-transparent"}`}
     >
-      <Icon className="w-5 h-5" />
+      <Icon className={`w-5 h-5 ${isActive ? "text-indigo-400" : "text-current"}`} />
     </div>
-    <span className="text-[10px] font-medium tracking-wide">{label}</span>
+    <span className={`text-[10px] font-medium tracking-wide transition-opacity duration-300 ${isActive ? "opacity-100" : "opacity-0 hidden"}`}>{label}</span>
   </button>
 );
 
@@ -998,7 +1081,9 @@ const PlannerTab = ({
   totalBudget,
   expectedIncoming,
   customCosts,
+  setCustomCosts,
   duration,
+  expenses,
 }: any) => {
   const [tripDays, setTripDays] = useState(duration || 3);
 
@@ -1028,32 +1113,46 @@ const PlannerTab = ({
   const dailyLimit = disposableBudget / tripDays;
   const budgetHealth = (remainingBudget / (totalBudget || 1)) * 100;
 
+  // Prepare chart data
+  const expensesByCategory = expenses.reduce((acc: any, expense: any) => {
+    const category = expense.category || "Other";
+    acc[category] = (acc[category] || 0) + Number(expense.amount);
+    return acc;
+  }, {});
+
+  const chartData = Object.keys(expensesByCategory).map((category) => ({
+    name: category,
+    value: expensesByCategory[category],
+  }));
+
+  const COLORS = ["#0088FE", "#00C49F", "#FFBB28", "#FF8042", "#8884d8", "#82ca9d"];
+
   return (
     <div className="space-y-6 animate-in fade-in duration-500 pb-40">
       {/* Overview Card */}
-      <div className="bg-zinc-900/50 backdrop-blur-md border border-zinc-800/50 rounded-3xl p-6">
+      <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 shadow-sm">
         <div className="flex justify-between items-start mb-6">
           <div>
             <h3 className="text-lg font-semibold text-zinc-100">
               Budget Planner
             </h3>
-            <p className="text-sm text-zinc-400">
+            <p className="text-sm text-zinc-500">
               Plan your daily spending to stay on track.
             </p>
           </div>
-          <div className="flex items-center gap-1 bg-zinc-950 rounded-lg p-1 border border-zinc-800">
+          <div className="flex items-center gap-1 bg-zinc-950 rounded-lg p-1">
             <button
               onClick={() => setTripDays(Math.max(1, tripDays - 1))}
-              className="w-6 h-6 flex items-center justify-center text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 rounded-md transition-colors text-xs"
+              className="w-6 h-6 flex items-center justify-center text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 rounded-md transition-colors text-xs"
             >
               -
             </button>
-            <span className="text-xs font-medium text-zinc-100 w-8 text-center">
+            <span className="text-xs font-medium text-zinc-300 w-8 text-center">
               {tripDays}d
             </span>
             <button
               onClick={() => setTripDays(tripDays + 1)}
-              className="w-6 h-6 flex items-center justify-center text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 rounded-md transition-colors text-xs"
+              className="w-6 h-6 flex items-center justify-center text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 rounded-md transition-colors text-xs"
             >
               +
             </button>
@@ -1064,14 +1163,14 @@ const PlannerTab = ({
           {/* Progress Bar */}
           <div>
             <div className="flex justify-between text-sm mb-2">
-              <span className="text-zinc-400">Projected Usage</span>
+              <span className="text-zinc-500">Projected Usage</span>
               <span
                 className={`font-medium ${remainingBudget < 0 ? "text-rose-400" : "text-emerald-400"}`}
               >
                 {remainingBudget < 0 ? "Over Budget" : "Within Budget"}
               </span>
             </div>
-            <div className="h-3 bg-zinc-950 rounded-full overflow-hidden border border-zinc-800/50">
+            <div className="h-3 bg-zinc-950 rounded-full overflow-hidden">
               <motion.div
                 initial={{ width: 0 }}
                 animate={{
@@ -1082,7 +1181,7 @@ const PlannerTab = ({
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4 pt-4 border-t border-zinc-800/50">
+          <div className="grid grid-cols-2 gap-4 pt-4 border-t border-zinc-800">
             <div>
               <p className="text-xs text-zinc-500 uppercase tracking-wider mb-1">
                 Disposable / Day
@@ -1112,7 +1211,7 @@ const PlannerTab = ({
           Daily Allocations
         </h3>
 
-        <div className="bg-zinc-900/40 backdrop-blur-md border border-zinc-800/50 rounded-3xl p-4 space-y-4">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-4 space-y-4 shadow-sm">
           <AllocationInput
             label="Food & Dining"
             icon={Coffee}
@@ -1146,7 +1245,7 @@ const PlannerTab = ({
             bgColor="bg-pink-500/10"
           />
 
-          <div className="pt-4 border-t border-zinc-800/50 flex justify-between items-center">
+          <div className="pt-4 border-t border-zinc-800 flex justify-between items-center">
             <span className="text-sm font-medium text-zinc-300">
               Total Daily Spend
             </span>
@@ -1159,25 +1258,50 @@ const PlannerTab = ({
         </div>
       </div>
 
-      {/* Fixed Costs Summary */}
-      <div className="bg-zinc-900/40 backdrop-blur-md border border-zinc-800/50 rounded-3xl p-6">
-        <h3 className="text-sm font-semibold text-zinc-500 uppercase tracking-wider mb-4">
-          Fixed Costs Breakdown
+      {/* Expenses Breakdown Chart */}
+      <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 shadow-sm">
+        <h3 className="text-sm font-semibold text-zinc-500 uppercase tracking-wider mb-4 flex items-center gap-2">
+          <Receipt className="w-4 h-4" /> Expenses Breakdown
         </h3>
-        <div className="space-y-3">
-          {customCosts.map((cost: any) => (
-            <div key={cost.id} className="flex justify-between text-sm">
-              <span className="text-zinc-400">{cost.label}</span>
-              <span className="text-zinc-200">
-                {formatCurrency(cost.amount)}
-              </span>
-            </div>
-          ))}
-          <div className="pt-3 border-t border-zinc-800/50 flex justify-between font-medium">
-            <span className="text-zinc-300">Total Fixed</span>
-            <span className="text-zinc-100">{formatCurrency(fixedCosts)}</span>
+        
+        {chartData.length > 0 ? (
+          <div className="h-64 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={chartData}
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={60}
+                  outerRadius={80}
+                  fill="#8884d8"
+                  paddingAngle={5}
+                  dataKey="value"
+                >
+                  {chartData.map((entry: any, index: number) => (
+                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip 
+                  contentStyle={{ backgroundColor: '#18181b', borderColor: '#27272a', borderRadius: '0.75rem' }}
+                  itemStyle={{ color: '#e4e4e7' }}
+                  formatter={(value: number) => formatCurrency(value)}
+                />
+                <Legend 
+                  verticalAlign="bottom" 
+                  height={36}
+                  formatter={(value) => <span className="text-zinc-400 text-xs ml-1">{value}</span>}
+                />
+              </PieChart>
+            </ResponsiveContainer>
           </div>
-        </div>
+        ) : (
+          <div className="flex flex-col items-center justify-center h-48 text-zinc-500">
+            <Receipt className="w-8 h-8 mb-2 opacity-50" />
+            <p className="text-sm">No expenses added yet.</p>
+            <p className="text-xs mt-1">Add expenses in the Expenses tab to see the breakdown.</p>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1216,7 +1340,7 @@ const AllocationInput = ({
         pattern="[0-9]*"
         value={value}
         onChange={(e) => setter(Number(e.target.value))}
-        className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-2 py-2 text-right text-sm text-zinc-100 focus:outline-none focus:border-indigo-500"
+        className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-2 py-2 text-right text-sm text-zinc-100 focus:outline-none focus:border-indigo-500"
       />
     </div>
   </div>
@@ -1231,30 +1355,6 @@ const ExploreTab = ({ places, setPlaces, schedule, setSchedule, getHeaders, trip
   const [scheduleDate, setScheduleDate] = useState("");
   const [scheduleTime, setScheduleTime] = useState("");
   const [scheduleNotes, setScheduleNotes] = useState("");
-
-  const handleAddPlace = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newPlaceTitle) return;
-
-    const newPlace: Place = {
-      id: Date.now().toString(),
-      title: newPlaceTitle,
-      category: newPlaceCat,
-      trip_id: tripId,
-    };
-
-    try {
-      await fetch("/api/places", {
-        method: "POST",
-        headers: getHeaders(),
-        body: JSON.stringify(newPlace),
-      });
-      setPlaces([newPlace, ...places]);
-      setNewPlaceTitle("");
-    } catch (err) {
-      console.error("Failed to add place", err);
-    }
-  };
 
   const handleDeletePlace = async (id: string) => {
     try {
@@ -1272,18 +1372,78 @@ const ExploreTab = ({ places, setPlaces, schedule, setSchedule, getHeaders, trip
     e.preventDefault();
     if (!schedulePlaceId || !scheduleDate || !scheduleTime) return;
 
-    const place = places.find((p: Place) => p.id === schedulePlaceId);
-    if (!place) return;
+    let finalPlaceId = schedulePlaceId;
+    let placeTitle = "";
+    let placeCategory: PlaceCategory = "Street Food";
+    let placeLat: number | undefined;
+    let placeLng: number | undefined;
+    let placeRating: number | undefined;
+
+    // If creating a new place
+    if (schedulePlaceId === "NEW") {
+      if (!newPlaceTitle) return;
+
+      const newPlace: Place = {
+        id: Date.now().toString(),
+        title: newPlaceTitle,
+        category: newPlaceCat,
+        trip_id: tripId,
+        // lat/lng/rating will be filled by server if possible
+      };
+
+      try {
+        const res = await fetch("/api/places", {
+          method: "POST",
+          headers: getHeaders(),
+          body: JSON.stringify(newPlace),
+        });
+        const data = await res.json();
+        
+        if (data.success && data.place) {
+          const createdPlace = data.place;
+          setPlaces([createdPlace, ...places]);
+          finalPlaceId = createdPlace.id;
+          placeTitle = createdPlace.title;
+          placeCategory = createdPlace.category;
+          placeLat = createdPlace.lat;
+          placeLng = createdPlace.lng;
+          placeRating = createdPlace.rating;
+        } else {
+          // Fallback if server doesn't return place (shouldn't happen with updated server)
+          setPlaces([newPlace, ...places]);
+          finalPlaceId = newPlace.id;
+          placeTitle = newPlace.title;
+          placeCategory = newPlace.category;
+        }
+        
+        // Reset new place fields
+        setNewPlaceTitle("");
+      } catch (err) {
+        console.error("Failed to add place", err);
+        return;
+      }
+    } else {
+      const place = places.find((p: Place) => p.id === schedulePlaceId);
+      if (!place) return;
+      placeTitle = place.title;
+      placeCategory = place.category;
+      placeLat = place.lat;
+      placeLng = place.lng;
+      placeRating = place.rating;
+    }
 
     const newItem: ScheduleItem = {
       id: Date.now().toString(),
       trip_id: tripId,
-      place_id: schedulePlaceId,
+      place_id: finalPlaceId,
       date: scheduleDate,
       time: scheduleTime,
       notes: scheduleNotes,
-      place_title: place.title,
-      place_category: place.category,
+      place_title: placeTitle,
+      place_category: placeCategory,
+      place_lat: placeLat,
+      place_lng: placeLng,
+      place_rating: placeRating,
     };
 
     try {
@@ -1329,14 +1489,66 @@ const ExploreTab = ({ places, setPlaces, schedule, setSchedule, getHeaders, trip
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-40">
+      {/* Map View */}
+      <div className="bg-zinc-900 border border-zinc-800 rounded-3xl overflow-hidden h-64 md:h-80 relative z-0">
+         <MapContainer center={[28.6139, 77.2090]} zoom={11} style={{ height: "100%", width: "100%" }}>
+            <TileLayer
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            />
+            <MapUpdater items={places} />
+            {places.map((place: Place) => {
+              if (!place.lat || !place.lng) return null;
+              const placeSchedule = schedule.filter((s: ScheduleItem) => s.place_id === place.id);
+              
+              return (
+                <Marker 
+                  key={place.id} 
+                  position={[place.lat, place.lng]}
+                  icon={getCategoryIcon(place.category)}
+                >
+                  <Popup>
+                    <div className="text-zinc-900 min-w-[150px]">
+                      <h3 className="font-bold text-sm">{place.title}</h3>
+                      <span className="text-xs font-semibold text-zinc-500 bg-zinc-100 px-1.5 py-0.5 rounded-md border border-zinc-200 inline-block mb-1">
+                        {place.category}
+                      </span>
+                      
+                      {place.rating && (
+                        <div className="flex items-center gap-1 mb-2 bg-yellow-50 w-fit px-1.5 py-0.5 rounded text-yellow-700 border border-yellow-200">
+                          <Star className="w-3 h-3 fill-yellow-500 text-yellow-500" />
+                          <span className="text-xs font-bold">{place.rating}</span>
+                        </div>
+                      )}
+
+                      {placeSchedule.length > 0 ? (
+                        <div className="mt-2 border-t pt-2 border-zinc-200">
+                          <p className="text-xs font-semibold text-zinc-500 mb-1">Scheduled:</p>
+                          {placeSchedule.map((s: ScheduleItem) => (
+                            <p key={s.id} className="text-xs text-zinc-700">
+                              📅 {s.date} at {s.time}
+                            </p>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-zinc-400 mt-2 italic">Not scheduled yet</p>
+                      )}
+                    </div>
+                  </Popup>
+                </Marker>
+              );
+            })}
+         </MapContainer>
+      </div>
+
       {/* Trip Timeline */}
-      <div className="bg-zinc-900/40 backdrop-blur-md border border-zinc-800/50 rounded-3xl p-6">
+      <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6">
         <h3 className="text-lg font-semibold text-zinc-100 mb-4 flex items-center gap-2">
           <Calendar className="w-5 h-5 text-indigo-400" /> Trip Timeline
         </h3>
         
         {/* Add Schedule Form */}
-        <form onSubmit={handleAddSchedule} className="space-y-3 mb-6 bg-zinc-950/50 p-4 rounded-2xl border border-zinc-800/50">
+        <form onSubmit={handleAddSchedule} className="space-y-3 mb-6 bg-zinc-950 p-4 rounded-2xl border border-zinc-800">
           <div className="grid grid-cols-1 gap-3">
             <select
               value={schedulePlaceId}
@@ -1345,10 +1557,47 @@ const ExploreTab = ({ places, setPlaces, schedule, setSchedule, getHeaders, trip
               required
             >
               <option value="">Select a Place...</option>
+              <option value="NEW">+ Create New Place</option>
               {places.map((p: Place) => (
                 <option key={p.id} value={p.id}>{p.title} ({p.category})</option>
               ))}
             </select>
+
+            {schedulePlaceId === "NEW" && (
+              <div className="space-y-3 p-3 bg-zinc-900 rounded-xl border border-zinc-800 animate-in fade-in slide-in-from-top-2">
+                 <input
+                  type="text"
+                  required
+                  value={newPlaceTitle}
+                  onChange={(e) => setNewPlaceTitle(e.target.value)}
+                  placeholder="Place Name (e.g. Red Fort)"
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500"
+                />
+                 <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { id: "Street Food", label: "Street Food", icon: Coffee },
+                    { id: "Casual Dining", label: "Casual", icon: UtensilsCrossed },
+                    { id: "Premium", label: "Premium", icon: Wine },
+                    { id: "Hotspot", label: "Hotspot", icon: Camera },
+                  ].map((cat) => (
+                    <button
+                      key={cat.id}
+                      type="button"
+                      onClick={() => setNewPlaceCat(cat.id as PlaceCategory)}
+                      className={`flex items-center gap-2 p-2 rounded-lg border transition-all ${
+                        newPlaceCat === cat.id
+                          ? "bg-indigo-500/20 border-indigo-500/50 text-indigo-400"
+                          : "bg-zinc-900 border-zinc-800 text-zinc-400 hover:bg-zinc-800"
+                      }`}
+                    >
+                      <cat.icon className="w-3 h-3" />
+                      <span className="text-xs font-medium">{cat.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="flex gap-2">
               <input
                 type="date"
@@ -1391,7 +1640,7 @@ const ExploreTab = ({ places, setPlaces, schedule, setSchedule, getHeaders, trip
               {/* Dot */}
               <div className="absolute -left-[21px] top-1.5 w-3 h-3 rounded-full bg-indigo-500 border-2 border-zinc-950" />
               
-              <div className="bg-zinc-900/50 border border-zinc-800/50 rounded-xl p-3 hover:border-indigo-500/30 transition-colors">
+              <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-3 hover:border-indigo-500/30 transition-colors">
                 <div className="flex justify-between items-start">
                   <div>
                     <h4 className="font-medium text-zinc-100 text-sm">{item.place_title}</h4>
@@ -1409,51 +1658,6 @@ const ExploreTab = ({ places, setPlaces, schedule, setSchedule, getHeaders, trip
             </div>
           ))}
         </div>
-      </div>
-
-      {/* Add Location Form */}
-      <div className="bg-zinc-900/40 backdrop-blur-md border border-zinc-800/50 rounded-3xl p-6">
-        <h3 className="text-sm font-semibold text-zinc-400 uppercase tracking-wider mb-4">
-          Add Location
-        </h3>
-        <form onSubmit={handleAddPlace} className="space-y-3">
-          <input
-            type="text"
-            required
-            value={newPlaceTitle}
-            onChange={(e) => setNewPlaceTitle(e.target.value)}
-            placeholder="e.g. Chandni Chowk Parathas"
-            className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500"
-          />
-          <div className="grid grid-cols-2 gap-2">
-            {[
-              { id: "Street Food", label: "Street Food", icon: Coffee },
-              { id: "Casual Dining", label: "Casual", icon: UtensilsCrossed },
-              { id: "Premium", label: "Premium", icon: Wine },
-              { id: "Hotspot", label: "Hotspot", icon: Camera },
-            ].map((cat) => (
-              <button
-                key={cat.id}
-                type="button"
-                onClick={() => setNewPlaceCat(cat.id as PlaceCategory)}
-                className={`flex items-center gap-2 p-3 rounded-xl border transition-all ${
-                  newPlaceCat === cat.id
-                    ? "bg-indigo-500/20 border-indigo-500/50 text-indigo-400"
-                    : "bg-zinc-900 border-zinc-800 text-zinc-400 hover:bg-zinc-800"
-                }`}
-              >
-                <cat.icon className="w-4 h-4" />
-                <span className="text-xs font-medium">{cat.label}</span>
-              </button>
-            ))}
-          </div>
-          <button
-            type="submit"
-            className="w-full bg-indigo-500 hover:bg-indigo-600 text-white py-3 rounded-xl font-semibold transition-colors"
-          >
-            Add Location
-          </button>
-        </form>
       </div>
 
       {/* Food Guide */}
@@ -1669,20 +1873,20 @@ const ExpensesTab = ({
       <div className="grid grid-cols-2 gap-4">
         <button
           onClick={() => setIsAddExpenseOpen(true)}
-          className="flex items-center justify-center gap-2 bg-rose-50 hover:bg-rose-100 text-rose-600 py-4 rounded-3xl font-medium transition-colors border border-rose-200"
+          className="flex items-center justify-center gap-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 py-4 rounded-3xl font-medium transition-colors"
         >
           <ArrowUpRight className="w-5 h-5" /> Add Expense
         </button>
         <button
           onClick={() => setIsAddIncomeOpen(true)}
-          className="flex items-center justify-center gap-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-600 py-4 rounded-3xl font-medium transition-colors border border-emerald-200"
+          className="flex items-center justify-center gap-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 py-4 rounded-3xl font-medium transition-colors"
         >
           <ArrowDownRight className="w-5 h-5" /> Add Income
         </button>
       </div>
 
       {/* Filter */}
-      <div className="flex bg-zinc-900/50 p-1 rounded-2xl border border-zinc-800/50">
+      <div className="flex bg-zinc-900 p-1 rounded-2xl border border-zinc-800">
         {["all", "trip", "savings"].map((f) => (
           <button
             key={f}
@@ -1709,7 +1913,7 @@ const ExpensesTab = ({
           {filteredIncomes.map((inc: Income) => (
             <div
               key={inc.id}
-              className="bg-zinc-900/40 backdrop-blur-md border border-zinc-800/50 rounded-2xl p-4 flex items-center justify-between"
+              className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 flex items-center justify-between shadow-sm"
             >
               <div className="flex items-center gap-4">
                 <div className="w-10 h-10 rounded-full bg-emerald-500/10 text-emerald-400 flex items-center justify-center">
@@ -1739,7 +1943,7 @@ const ExpensesTab = ({
                 </span>
                 <button
                   onClick={() => handleDeleteIncome(inc.id)}
-                  className="p-1.5 text-zinc-600 hover:text-rose-500 transition-colors rounded-full hover:bg-rose-500/10"
+                  className="p-1.5 text-zinc-600 hover:text-rose-500 transition-colors"
                 >
                   <Trash2 className="w-4 h-4" />
                 </button>
@@ -1755,11 +1959,11 @@ const ExpensesTab = ({
             return (
               <div
                 key={exp.id}
-                className="bg-zinc-900/40 backdrop-blur-md border border-zinc-800/50 rounded-2xl p-4 flex items-center justify-between"
+                className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 flex items-center justify-between shadow-sm"
               >
                 <div className="flex items-center gap-4">
                   <div
-                    className={`w-10 h-10 rounded-full flex items-center justify-center ${cat.color}`}
+                    className={`w-10 h-10 rounded-full flex items-center justify-center ${cat.color} bg-opacity-10 border border-current border-opacity-20`}
                   >
                     <Icon className="w-5 h-5" />
                   </div>
@@ -1787,7 +1991,7 @@ const ExpensesTab = ({
                   </span>
                   <button
                     onClick={() => handleDeleteExpense(exp.id)}
-                    className="p-1.5 text-zinc-600 hover:text-rose-500 transition-colors rounded-full hover:bg-rose-500/10"
+                    className="p-1.5 text-zinc-600 hover:text-rose-500 transition-colors"
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
@@ -1967,9 +2171,9 @@ const DashboardTab = ({
 }: any) => (
   <div className="space-y-6 animate-in fade-in duration-500 pb-40">
     {/* Savings Overview */}
-    <div className="bg-zinc-900/50 dark:bg-zinc-900/40 backdrop-blur-md border border-zinc-800/50 rounded-3xl p-5 shadow-lg flex justify-between items-center">
+    <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-5 shadow-sm flex justify-between items-center">
       <div>
-        <p className="text-zinc-400 text-xs font-medium uppercase tracking-wider mb-1">
+        <p className="text-zinc-500 text-xs font-medium uppercase tracking-wider mb-1">
           Total Savings
         </p>
         <h2 className="text-2xl font-semibold text-emerald-400">
@@ -1982,13 +2186,13 @@ const DashboardTab = ({
     </div>
 
     {/* Trip Overview */}
-    <div className="bg-zinc-900/50 dark:bg-zinc-900/40 backdrop-blur-md border border-zinc-800/50 rounded-3xl p-6 shadow-lg">
+    <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 shadow-sm">
       <div className="flex justify-between items-start mb-4">
         <div>
-          <p className="text-zinc-400 text-sm font-medium mb-1">
+          <p className="text-zinc-500 text-sm font-medium mb-1">
             Trip Balance
           </p>
-          <h2 className="text-4xl font-semibold text-zinc-50 tracking-tight">
+          <h2 className="text-4xl font-semibold text-zinc-100 tracking-tight">
             {formatCurrency(tripRemainingBalance)}
           </h2>
         </div>
@@ -1997,7 +2201,7 @@ const DashboardTab = ({
         </div>
       </div>
       <div className="flex items-center gap-2 text-sm">
-        <span className="text-indigo-400 bg-indigo-400/10 px-2 py-1 rounded-lg font-medium">
+        <span className="text-indigo-400 bg-indigo-500/10 px-2 py-1 rounded-lg font-medium">
           {formatCurrency(safeDailySpend)} / day
         </span>
         <span className="text-zinc-500">safe spend</span>
@@ -2006,8 +2210,8 @@ const DashboardTab = ({
 
     {/* Trip Stats */}
     <div className="grid grid-cols-2 gap-4">
-      <div className="bg-zinc-900/50 dark:bg-zinc-900/40 backdrop-blur-md border border-zinc-800/50 rounded-3xl p-5 shadow-lg">
-        <div className="flex items-center gap-2 text-zinc-400 mb-2">
+      <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-5 shadow-sm">
+        <div className="flex items-center gap-2 text-zinc-500 mb-2">
           <ArrowUpRight className="w-4 h-4 text-rose-400" />
           <span className="text-xs font-medium uppercase tracking-wider">
             Trip Spent
@@ -2018,8 +2222,8 @@ const DashboardTab = ({
         </p>
       </div>
 
-      <div className="bg-zinc-900/50 dark:bg-zinc-900/40 backdrop-blur-md border border-zinc-800/50 rounded-3xl p-5 shadow-lg">
-        <div className="flex items-center gap-2 text-zinc-400 mb-2">
+      <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-5 shadow-sm">
+        <div className="flex items-center gap-2 text-zinc-500 mb-2">
           <ArrowDownRight className="w-4 h-4 text-emerald-400" />
           <span className="text-xs font-medium uppercase tracking-wider">
             Trip In
@@ -2032,7 +2236,7 @@ const DashboardTab = ({
     </div>
 
     {/* Trip Finances */}
-    <div className="bg-zinc-900/50 dark:bg-zinc-900/40 backdrop-blur-md border border-zinc-800/50 rounded-3xl p-6 shadow-lg">
+    <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 shadow-sm">
       <div className="flex items-center justify-between mb-6">
         <h3 className="text-lg font-semibold text-zinc-100">
           {tripName || "Trip"} Finances
@@ -2042,7 +2246,7 @@ const DashboardTab = ({
             if (isEditingTrip) saveFinances();
             setIsEditingTrip(!isEditingTrip);
           }}
-          className="p-2 bg-zinc-800/50 hover:bg-zinc-800 rounded-full text-zinc-400 transition-colors"
+          className="p-2 bg-zinc-800 hover:bg-zinc-700 rounded-full text-zinc-400 transition-colors"
         >
           {isEditingTrip ? (
             <Check className="w-4 h-4 text-emerald-400" />
@@ -2168,7 +2372,7 @@ const DashboardTab = ({
     </div>
 
     {/* Savings Finances */}
-    <div className="bg-zinc-900/50 dark:bg-zinc-900/40 backdrop-blur-md border border-zinc-800/50 rounded-3xl p-6 shadow-lg">
+    <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 shadow-sm">
       <div className="flex items-center justify-between mb-6">
         <h3 className="text-lg font-semibold text-zinc-100">
           Savings Finances
@@ -2178,7 +2382,7 @@ const DashboardTab = ({
             if (isEditingSavings) saveFinances();
             setIsEditingSavings(!isEditingSavings);
           }}
-          className="p-2 bg-zinc-800/50 hover:bg-zinc-800 rounded-full text-zinc-400 transition-colors"
+          className="p-2 bg-zinc-800 hover:bg-zinc-700 rounded-full text-zinc-400 transition-colors"
         >
           {isEditingSavings ? (
             <Check className="w-4 h-4 text-emerald-400" />

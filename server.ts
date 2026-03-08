@@ -88,7 +88,10 @@ const initDb = async () => {
         user_id INTEGER REFERENCES users(id),
         trip_id TEXT REFERENCES trips(id) ON DELETE CASCADE,
         title TEXT,
-        category TEXT
+        category TEXT,
+        lat FLOAT,
+        lng FLOAT,
+        rating FLOAT
       );
     `);
 
@@ -108,6 +111,9 @@ const initDb = async () => {
     await client.query(`
       ALTER TABLE trips ADD COLUMN IF NOT EXISTS duration INTEGER DEFAULT 3;
       ALTER TABLE trips ADD COLUMN IF NOT EXISTS custom_costs JSONB DEFAULT '[]';
+      ALTER TABLE places ADD COLUMN IF NOT EXISTS lat FLOAT;
+      ALTER TABLE places ADD COLUMN IF NOT EXISTS lng FLOAT;
+      ALTER TABLE places ADD COLUMN IF NOT EXISTS rating FLOAT;
     `);
   } catch (err) {
     console.error("Error initializing database:", err);
@@ -260,7 +266,9 @@ async function startServer() {
       `, [id]);
       const places = await pool.query("SELECT * FROM places WHERE trip_id = $1 ORDER BY id DESC", [id]);
       const schedule = await pool.query(`
-        SELECT s.id, s.user_id, s.trip_id, s.place_id, s.date, s.time, s.notes, p.title as place_title, p.category as place_category
+        SELECT s.id, s.user_id, s.trip_id, s.place_id, s.date, s.time, s.notes, 
+               p.title as place_title, p.category as place_category,
+               p.lat as place_lat, p.lng as place_lng, p.rating as place_rating
         FROM schedule s
         JOIN places p ON s.place_id = p.id
         WHERE s.trip_id = $1
@@ -374,13 +382,42 @@ async function startServer() {
   });
 
   app.post("/api/places", authenticate, async (req: any, res) => {
-    const { id, trip_id, title, category } = req.body;
+    const { id, trip_id, title, category, lat, lng, rating } = req.body;
+    
+    let finalLat = lat;
+    let finalLng = lng;
+
+    // If lat/lng are missing, try to geocode the title
+    if (!finalLat || !finalLng) {
+      try {
+        const query = encodeURIComponent(title);
+        const geoRes = await fetch(`https://nominatim.openstreetmap.org/search?q=${query}&format=json&limit=1`, {
+          headers: {
+            "User-Agent": "AI-Studio-Travel-App/1.0"
+          }
+        });
+        const data: any = await geoRes.json();
+        if (data && data.length > 0) {
+          finalLat = parseFloat(data[0].lat);
+          finalLng = parseFloat(data[0].lon);
+        }
+      } catch (geoErr) {
+        console.error("Geocoding failed:", geoErr);
+        // Continue without coordinates if geocoding fails
+      }
+    }
+
     try {
       await pool.query(
-        "INSERT INTO places (id, user_id, trip_id, title, category) VALUES ($1, $2, $3, $4, $5)",
-        [id, req.userId, trip_id, title, category]
+        "INSERT INTO places (id, user_id, trip_id, title, category, lat, lng, rating) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+        [id, req.userId, trip_id, title, category, finalLat, finalLng, rating]
       );
-      res.json({ success: true });
+      
+      // Return the created place object so the frontend can update state with the new lat/lng
+      res.json({ 
+        success: true, 
+        place: { id, trip_id, title, category, lat: finalLat, lng: finalLng, rating } 
+      });
     } catch (err) {
       console.error(err);
       res.status(500).json({ error: "Failed to add place" });
