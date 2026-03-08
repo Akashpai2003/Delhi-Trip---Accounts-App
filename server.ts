@@ -103,6 +103,12 @@ const initDb = async () => {
         notes TEXT
       );
     `);
+
+    // Migrations
+    await client.query(`
+      ALTER TABLE trips ADD COLUMN IF NOT EXISTS duration INTEGER DEFAULT 3;
+      ALTER TABLE trips ADD COLUMN IF NOT EXISTS custom_costs JSONB DEFAULT '[]';
+    `);
   } catch (err) {
     console.error("Error initializing database:", err);
   } finally {
@@ -177,16 +183,20 @@ async function startServer() {
   app.get("/api/trips", authenticate, async (req: any, res) => {
     try {
       const result = await pool.query(`
-        SELECT id, user_id, name, 
-          totalBudget as "totalBudget", 
-          platinumTicket as "platinumTicket", 
-          pendingPlatinum as "pendingPlatinum", 
-          flightTotal as "flightTotal", 
-          myFlightShare as "myFlightShare", 
-          stay, 
-          expectedIncoming as "expectedIncoming", 
-          baseSavings as "baseSavings"
-        FROM trips WHERE user_id = $1
+        SELECT t.id, t.user_id, t.name, 
+          t.totalBudget as "totalBudget", 
+          t.platinumTicket as "platinumTicket", 
+          t.pendingPlatinum as "pendingPlatinum", 
+          t.flightTotal as "flightTotal", 
+          t.myFlightShare as "myFlightShare", 
+          t.stay, 
+          t.expectedIncoming as "expectedIncoming", 
+          t.baseSavings as "baseSavings",
+          t.duration,
+          t.custom_costs as "customCosts",
+          COALESCE((SELECT SUM(amount) FROM expenses WHERE trip_id = t.id AND accountId = 'trip'), 0) as "tripDynamicSpent",
+          COALESCE((SELECT SUM(amount) FROM incomes WHERE trip_id = t.id AND accountId = 'trip'), 0) as "tripDynamicIncome"
+        FROM trips t WHERE t.user_id = $1
       `, [req.userId]);
       res.json(result.rows);
     } catch (err) {
@@ -196,11 +206,11 @@ async function startServer() {
   });
 
   app.post("/api/trips", authenticate, async (req: any, res) => {
-    const { id, name, totalBudget } = req.body;
+    const { id, name, totalBudget, duration } = req.body;
     try {
       await pool.query(
-        "INSERT INTO trips (id, user_id, name, totalBudget) VALUES ($1, $2, $3, $4)",
-        [id, req.userId, name, totalBudget || 0]
+        "INSERT INTO trips (id, user_id, name, totalBudget, duration) VALUES ($1, $2, $3, $4, $5)",
+        [id, req.userId, name, totalBudget || 0, duration || 3]
       );
       res.json({ success: true });
     } catch (err) {
@@ -232,7 +242,9 @@ async function startServer() {
           myFlightShare as "myFlightShare", 
           stay, 
           expectedIncoming as "expectedIncoming", 
-          baseSavings as "baseSavings"
+          baseSavings as "baseSavings",
+          duration,
+          custom_costs as "customCosts"
         FROM trips WHERE id = $1 AND user_id = $2
       `, [id, req.userId]);
       const trip = tripResult.rows[0];
@@ -273,6 +285,7 @@ async function startServer() {
       stay,
       expectedIncoming,
       baseSavings,
+      customCosts,
     } = req.body;
 
     try {
@@ -280,8 +293,8 @@ async function startServer() {
         UPDATE trips SET 
           totalBudget = $1, platinumTicket = $2, pendingPlatinum = $3, 
           flightTotal = $4, myFlightShare = $5, stay = $6, 
-          expectedIncoming = $7, baseSavings = $8
-        WHERE id = $9 AND user_id = $10
+          expectedIncoming = $7, baseSavings = $8, custom_costs = $9
+        WHERE id = $10 AND user_id = $11
       `, [
         totalBudget,
         platinumTicket,
@@ -291,6 +304,7 @@ async function startServer() {
         stay,
         expectedIncoming,
         baseSavings,
+        JSON.stringify(customCosts || []),
         id,
         req.userId,
       ]);

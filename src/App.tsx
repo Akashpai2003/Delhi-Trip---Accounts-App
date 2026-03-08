@@ -28,6 +28,8 @@ import {
   Calendar,
   ChevronRight,
   RotateCcw,
+  UtensilsCrossed,
+  Camera,
 } from "lucide-react";
 
 // --- Types ---
@@ -60,6 +62,10 @@ interface Trip {
   stay?: number;
   expectedIncoming?: number;
   baseSavings?: number;
+  tripDynamicSpent?: number;
+  tripDynamicIncome?: number;
+  duration?: number;
+  customCosts?: { id: string; label: string; amount: number }[];
 }
 
 interface Expense {
@@ -205,6 +211,7 @@ export default function App() {
   const [myFlightShare, setMyFlightShare] = useState(0);
   const [stay, setStay] = useState(0);
   const [expectedIncoming, setExpectedIncoming] = useState(0);
+  const [customCosts, setCustomCosts] = useState<{ id: string; label: string; amount: number }[]>([]);
 
   // Fixed Finances State (Savings)
   const [baseSavings, setBaseSavings] = useState(0);
@@ -239,6 +246,12 @@ export default function App() {
     init();
   }, []);
 
+  useEffect(() => {
+    if (appState === "trip_selection" && token) {
+      fetchTrips(token);
+    }
+  }, [appState, token]);
+
   // --- API Calls ---
   const getHeaders = (authToken = token) => ({
     "Content-Type": "application/json",
@@ -263,24 +276,35 @@ export default function App() {
     }
   };
 
+  const [newTripDuration, setNewTripDuration] = useState("3");
+  const [newTripDailyBudget, setNewTripDailyBudget] = useState("");
+
   const createTrip = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTripName) return;
     try {
+      const budget = newTripDailyBudget 
+        ? Number(newTripDailyBudget) * Number(newTripDuration) 
+        : Number(newTripBudget);
+
       const newTrip = {
         id: Date.now().toString(),
         name: newTripName,
-        totalBudget: Number(newTripBudget) || 0,
+        totalBudget: budget || 0,
+        duration: Number(newTripDuration) || 3,
       };
       await fetch("/api/trips", {
         method: "POST",
         headers: getHeaders(),
         body: JSON.stringify(newTrip),
       });
-      setTrips([...trips, newTrip]);
+      // Refresh trips to get full data
+      await fetchTrips();
       setIsCreatingTrip(false);
       setNewTripName("");
       setNewTripBudget("");
+      setNewTripDuration("3");
+      setNewTripDailyBudget("");
     } catch (err) {
       console.error(err);
     }
@@ -302,6 +326,7 @@ export default function App() {
       setStay(t.stay || 0);
       setExpectedIncoming(t.expectedIncoming || 0);
       setBaseSavings(t.baseSavings || 0);
+      setCustomCosts(t.customCosts || []);
 
       setExpenses(data.expenses || []);
       setIncomes(data.incomes || []);
@@ -351,6 +376,7 @@ export default function App() {
           stay,
           expectedIncoming,
           baseSavings,
+          customCosts,
         }),
       });
     } catch (err) {
@@ -419,12 +445,13 @@ export default function App() {
   );
 
   // Trip Math
+  const customCostsTotal = customCosts.reduce((sum, c) => sum + c.amount, 0);
   const tripEffectiveSpent =
-    platinumTicket - pendingPlatinum + myFlightShare + stay + tripDynamicSpent;
+    customCostsTotal + tripDynamicSpent;
   const tripTotalIncoming = expectedIncoming + tripDynamicIncome;
   const tripRemainingBalance =
-    totalBudget - tripEffectiveSpent - pendingPlatinum + tripTotalIncoming;
-  const safeDailySpend = Math.max(0, tripRemainingBalance / 3); // 28th to 30th = 3 days
+    totalBudget - tripEffectiveSpent + tripTotalIncoming;
+  const safeDailySpend = Math.max(0, tripRemainingBalance / (currentTrip?.duration || 3));
 
   // Savings Math
   const totalSavingsBalance =
@@ -547,28 +574,68 @@ export default function App() {
           </header>
 
           <div className="space-y-4">
-            {trips.map((trip) => (
-              <motion.div
-                key={trip.id}
-                whileTap={{ scale: 0.98 }}
-                onClick={() => selectTrip(trip)}
-                className="bg-zinc-900/50 p-5 rounded-2xl shadow-sm border border-zinc-800/50 flex justify-between items-center cursor-pointer group"
-              >
-                <div>
-                  <h3 className="font-semibold text-zinc-100 text-lg">{trip.name}</h3>
-                  <p className="text-zinc-400 text-sm">Budget: {formatCurrency(trip.totalBudget)}</p>
-                </div>
-                <div className="flex items-center gap-3">
-                  <button
-                    onClick={(e) => deleteTrip(trip.id, e)}
-                    className="p-2 text-zinc-500 hover:text-rose-500 transition-colors"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                  <ChevronRight className="w-5 h-5 text-zinc-600" />
-                </div>
-              </motion.div>
-            ))}
+            {trips.map((trip) => {
+              // Calculate trip stats
+              const customCostsTotal = (trip.customCosts || []).reduce(
+                (sum, c) => sum + Number(c.amount),
+                0,
+              );
+              const effectiveSpent =
+                customCostsTotal + Number(trip.tripDynamicSpent || 0);
+              const totalIncoming =
+                Number(trip.expectedIncoming || 0) +
+                Number(trip.tripDynamicIncome || 0);
+              const remaining =
+                Number(trip.totalBudget || 0) - effectiveSpent + totalIncoming;
+
+              return (
+                <motion.div
+                  key={trip.id}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={() => selectTrip(trip)}
+                  className="bg-zinc-900/50 p-5 rounded-2xl shadow-sm border border-zinc-800/50 flex justify-between items-center cursor-pointer group"
+                >
+                  <div className="flex-1">
+                    <h3 className="font-semibold text-zinc-100 text-lg mb-1">
+                      {trip.name}
+                    </h3>
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
+                      <p className="text-zinc-400">
+                        Budget:{" "}
+                        <span className="text-zinc-300">
+                          {formatCurrency(trip.totalBudget)}
+                        </span>
+                      </p>
+                      <p className="text-zinc-400">
+                        Spent:{" "}
+                        <span className="text-zinc-300">
+                          {formatCurrency(effectiveSpent)}
+                        </span>
+                      </p>
+                      <p className="text-zinc-400 col-span-2">
+                        Remaining:{" "}
+                        <span
+                          className={
+                            remaining < 0 ? "text-rose-400" : "text-emerald-400"
+                          }
+                        >
+                          {formatCurrency(remaining)}
+                        </span>
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 pl-4 border-l border-zinc-800/50 ml-4">
+                    <button
+                      onClick={(e) => deleteTrip(trip.id, e)}
+                      className="p-2 text-zinc-500 hover:text-rose-500 transition-colors"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                    <ChevronRight className="w-5 h-5 text-zinc-600" />
+                  </div>
+                </motion.div>
+              );
+            })}
 
             <motion.button
               whileTap={{ scale: 0.98 }}
@@ -606,18 +673,59 @@ export default function App() {
                     className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-zinc-100 focus:outline-none focus:border-indigo-500"
                   />
                 </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-1.5 block">
+                      Duration (Days)
+                    </label>
+                    <input
+                      type="number"
+                      required
+                      min="1"
+                      value={newTripDuration}
+                      onChange={(e) => setNewTripDuration(e.target.value)}
+                      className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-zinc-100 focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-1.5 block">
+                      Daily Estimate
+                    </label>
+                    <input
+                      type="number"
+                      value={newTripDailyBudget}
+                      onChange={(e) => setNewTripDailyBudget(e.target.value)}
+                      placeholder="Optional"
+                      className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-zinc-100 focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+                </div>
                 <div>
                   <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-1.5 block">
                     Total Budget
                   </label>
-                  <input
-                    type="number"
-                    required
-                    value={newTripBudget}
-                    onChange={(e) => setNewTripBudget(e.target.value)}
-                    placeholder="0"
-                    className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-zinc-100 focus:outline-none focus:border-indigo-500"
-                  />
+                  <div className="relative">
+                    <input
+                      type="number"
+                      required
+                      value={
+                        newTripDailyBudget
+                          ? Number(newTripDailyBudget) * Number(newTripDuration)
+                          : newTripBudget
+                      }
+                      onChange={(e) => {
+                        setNewTripBudget(e.target.value);
+                        setNewTripDailyBudget(""); // Clear daily if manual total entered
+                      }}
+                      placeholder="0"
+                      className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-zinc-100 focus:outline-none focus:border-indigo-500"
+                    />
+                    {newTripDailyBudget && (
+                      <span className="absolute right-4 top-3.5 text-xs text-zinc-500">
+                        (Auto-calculated)
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <button
                   type="submit"
@@ -665,16 +773,6 @@ export default function App() {
               setIsEditingTrip={setIsEditingTrip}
               totalBudget={totalBudget}
               setTotalBudget={setTotalBudget}
-              platinumTicket={platinumTicket}
-              setPlatinumTicket={setPlatinumTicket}
-              pendingPlatinum={pendingPlatinum}
-              setPendingPlatinum={setPendingPlatinum}
-              flightTotal={flightTotal}
-              setFlightTotal={setFlightTotal}
-              myFlightShare={myFlightShare}
-              setMyFlightShare={setMyFlightShare}
-              stay={stay}
-              setStay={setStay}
               expectedIncoming={expectedIncoming}
               setExpectedIncoming={setExpectedIncoming}
               isEditingSavings={isEditingSavings}
@@ -682,6 +780,8 @@ export default function App() {
               baseSavings={baseSavings}
               setBaseSavings={setBaseSavings}
               saveFinances={saveFinances}
+              customCosts={customCosts}
+              setCustomCosts={setCustomCosts}
             />
           )}
           {activeTab === "expenses" && (
@@ -696,10 +796,16 @@ export default function App() {
               setIsAddIncomeOpen={setIsAddIncomeOpen}
               getHeaders={getHeaders}
               tripId={currentTrip?.id}
+              tripName={currentTrip?.name}
             />
           )}
           {activeTab === "planner" && (
-            <PlannerTab safeDailySpend={safeDailySpend} />
+            <PlannerTab
+              totalBudget={totalBudget}
+              expectedIncoming={expectedIncoming}
+              customCosts={customCosts}
+              duration={currentTrip?.duration}
+            />
           )}
           {activeTab === "explore" && (
             <ExploreTab
@@ -832,10 +938,13 @@ const RideEstimator = ({ icon: Icon, label, count, setCount }: any) => (
   </div>
 );
 
-const GuideCard = ({ title, subtitle, items, suggestions, onAddSuggestion, onDelete }: any) => (
+const GuideCard = ({ icon: Icon, title, subtitle, items, suggestions, onAddSuggestion, onDelete }: any) => (
   <div className="bg-zinc-900/50 border border-zinc-800/50 rounded-2xl p-4 shadow-sm">
     <div className="flex justify-between items-center mb-3">
-      <h4 className="font-medium text-zinc-100">{title}</h4>
+      <h4 className="font-medium text-zinc-100 flex items-center gap-2">
+        {Icon && <Icon className="w-4 h-4 text-zinc-400" />}
+        {title}
+      </h4>
       <span className="text-xs font-semibold text-zinc-500 bg-zinc-800 px-2 py-1 rounded-md">
         {subtitle}
       </span>
@@ -885,95 +994,233 @@ const GuideCard = ({ title, subtitle, items, suggestions, onAddSuggestion, onDel
   </div>
 );
 
-const PlannerTab = ({ safeDailySpend }: any) => {
-  const [foodPct, setFoodPct] = useState(40);
-  const [alcoholPct, setAlcoholPct] = useState(20);
-  const [transportPct, setTransportPct] = useState(20);
-  const bufferPct = 100 - foodPct - alcoholPct - transportPct;
+const PlannerTab = ({
+  totalBudget,
+  expectedIncoming,
+  customCosts,
+  duration,
+}: any) => {
+  const [tripDays, setTripDays] = useState(duration || 3);
 
-  const [metroRides, setMetroRides] = useState(4);
-  const [autoRides, setAutoRides] = useState(2);
-  const [cabRides, setCabRides] = useState(1);
+  // Daily Estimates
+  const [dailyFood, setDailyFood] = useState(1200);
+  const [dailyTransport, setDailyTransport] = useState(400);
+  const [dailyMisc, setDailyMisc] = useState(500);
+  const [dailyShopping, setDailyShopping] = useState(0);
 
-  const transportCost = metroRides * 40 + autoRides * 150 + cabRides * 400;
+  // Calculations
+  const fixedCosts = customCosts.reduce(
+    (sum: number, c: any) => sum + Number(c.amount),
+    0,
+  );
+  const disposableBudget =
+    Number(totalBudget || 0) +
+    Number(expectedIncoming || 0) -
+    fixedCosts;
+
+  const dailyTotal = dailyFood + dailyTransport + dailyMisc + dailyShopping;
+  const projectedTripCost = dailyTotal * tripDays + fixedCosts;
+  const remainingBudget =
+    Number(totalBudget || 0) +
+    Number(expectedIncoming || 0) -
+    projectedTripCost;
+
+  const dailyLimit = disposableBudget / tripDays;
+  const budgetHealth = (remainingBudget / (totalBudget || 1)) * 100;
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500 pb-40">
-      {/* Smart Allocation */}
-      <div className="bg-zinc-900/40 backdrop-blur-md border border-zinc-800/50 rounded-3xl p-6">
-        <h3 className="text-lg font-semibold text-zinc-100 mb-6">
-          Smart Daily Allocation
-        </h3>
-        <div className="space-y-6">
-          <AllocationSlider
-            label="Food & Dining"
-            pct={foodPct}
-            setPct={setFoodPct}
-            amount={(safeDailySpend * foodPct) / 100}
-            color="bg-orange-500"
-          />
-          <AllocationSlider
-            label="Alcohol & Nightlife"
-            pct={alcoholPct}
-            setPct={setAlcoholPct}
-            amount={(safeDailySpend * alcoholPct) / 100}
-            color="bg-purple-500"
-          />
-          <AllocationSlider
-            label="Transport"
-            pct={transportPct}
-            setPct={setTransportPct}
-            amount={(safeDailySpend * transportPct) / 100}
-            color="bg-blue-500"
-          />
+    <div className="space-y-6 animate-in fade-in duration-500 pb-40">
+      {/* Overview Card */}
+      <div className="bg-zinc-900/50 backdrop-blur-md border border-zinc-800/50 rounded-3xl p-6">
+        <div className="flex justify-between items-start mb-6">
+          <div>
+            <h3 className="text-lg font-semibold text-zinc-100">
+              Budget Planner
+            </h3>
+            <p className="text-sm text-zinc-400">
+              Plan your daily spending to stay on track.
+            </p>
+          </div>
+          <div className="flex items-center gap-1 bg-zinc-950 rounded-lg p-1 border border-zinc-800">
+            <button
+              onClick={() => setTripDays(Math.max(1, tripDays - 1))}
+              className="w-6 h-6 flex items-center justify-center text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 rounded-md transition-colors text-xs"
+            >
+              -
+            </button>
+            <span className="text-xs font-medium text-zinc-100 w-8 text-center">
+              {tripDays}d
+            </span>
+            <button
+              onClick={() => setTripDays(tripDays + 1)}
+              className="w-6 h-6 flex items-center justify-center text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 rounded-md transition-colors text-xs"
+            >
+              +
+            </button>
+          </div>
+        </div>
 
-          <div className="pt-4 border-t border-zinc-800/50">
-            <div className="flex justify-between items-center text-sm">
-              <span className="text-zinc-400">
-                Buffer / Misc ({bufferPct}%)
+        <div className="space-y-4">
+          {/* Progress Bar */}
+          <div>
+            <div className="flex justify-between text-sm mb-2">
+              <span className="text-zinc-400">Projected Usage</span>
+              <span
+                className={`font-medium ${remainingBudget < 0 ? "text-rose-400" : "text-emerald-400"}`}
+              >
+                {remainingBudget < 0 ? "Over Budget" : "Within Budget"}
               </span>
-              <span className="text-zinc-100 font-medium">
-                {formatCurrency((safeDailySpend * bufferPct) / 100)}
-              </span>
+            </div>
+            <div className="h-3 bg-zinc-950 rounded-full overflow-hidden border border-zinc-800/50">
+              <motion.div
+                initial={{ width: 0 }}
+                animate={{
+                  width: `${Math.min(100, (projectedTripCost / (totalBudget || 1)) * 100)}%`,
+                }}
+                className={`h-full rounded-full ${remainingBudget < 0 ? "bg-rose-500" : "bg-emerald-500"}`}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4 pt-4 border-t border-zinc-800/50">
+            <div>
+              <p className="text-xs text-zinc-500 uppercase tracking-wider mb-1">
+                Disposable / Day
+              </p>
+              <p className="text-xl font-semibold text-zinc-100">
+                {formatCurrency(dailyLimit)}
+              </p>
+            </div>
+            <div className="text-right">
+              <p className="text-xs text-zinc-500 uppercase tracking-wider mb-1">
+                Projected Left
+              </p>
+              <p
+                className={`text-xl font-semibold ${remainingBudget < 0 ? "text-rose-400" : "text-emerald-400"}`}
+              >
+                {remainingBudget > 0 ? "+" : ""}
+                {formatCurrency(remainingBudget)}
+              </p>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Transport Estimator */}
-      <div className="bg-zinc-900/40 backdrop-blur-md border border-zinc-800/50 rounded-3xl p-6">
-        <div className="flex justify-between items-center mb-6">
-          <h3 className="text-lg font-semibold text-zinc-100">
-            Transport Estimator
-          </h3>
-          <span className="text-indigo-400 font-semibold">
-            {formatCurrency(transportCost)}/day
-          </span>
-        </div>
-        <div className="space-y-4">
-          <RideEstimator
-            icon={Train}
-            label="Metro (~₹40)"
-            count={metroRides}
-            setCount={setMetroRides}
+      {/* Daily Allocations */}
+      <div className="space-y-4">
+        <h3 className="text-sm font-semibold text-zinc-500 uppercase tracking-wider pl-2">
+          Daily Allocations
+        </h3>
+
+        <div className="bg-zinc-900/40 backdrop-blur-md border border-zinc-800/50 rounded-3xl p-4 space-y-4">
+          <AllocationInput
+            label="Food & Dining"
+            icon={Coffee}
+            value={dailyFood}
+            setter={setDailyFood}
+            color="text-orange-400"
+            bgColor="bg-orange-500/10"
           />
-          <RideEstimator
-            icon={Navigation}
-            label="Auto (~₹150)"
-            count={autoRides}
-            setCount={setAutoRides}
-          />
-          <RideEstimator
+          <AllocationInput
+            label="Transport"
             icon={Car}
-            label="Cab (~₹400)"
-            count={cabRides}
-            setCount={setCabRides}
+            value={dailyTransport}
+            setter={setDailyTransport}
+            color="text-blue-400"
+            bgColor="bg-blue-500/10"
           />
+          <AllocationInput
+            label="Entertainment"
+            icon={Wine}
+            value={dailyMisc}
+            setter={setDailyMisc}
+            color="text-purple-400"
+            bgColor="bg-purple-500/10"
+          />
+          <AllocationInput
+            label="Shopping"
+            icon={ShoppingBag}
+            value={dailyShopping}
+            setter={setDailyShopping}
+            color="text-pink-400"
+            bgColor="bg-pink-500/10"
+          />
+
+          <div className="pt-4 border-t border-zinc-800/50 flex justify-between items-center">
+            <span className="text-sm font-medium text-zinc-300">
+              Total Daily Spend
+            </span>
+            <span
+              className={`text-lg font-bold ${dailyTotal > dailyLimit ? "text-rose-400" : "text-zinc-100"}`}
+            >
+              {formatCurrency(dailyTotal)}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Fixed Costs Summary */}
+      <div className="bg-zinc-900/40 backdrop-blur-md border border-zinc-800/50 rounded-3xl p-6">
+        <h3 className="text-sm font-semibold text-zinc-500 uppercase tracking-wider mb-4">
+          Fixed Costs Breakdown
+        </h3>
+        <div className="space-y-3">
+          {customCosts.map((cost: any) => (
+            <div key={cost.id} className="flex justify-between text-sm">
+              <span className="text-zinc-400">{cost.label}</span>
+              <span className="text-zinc-200">
+                {formatCurrency(cost.amount)}
+              </span>
+            </div>
+          ))}
+          <div className="pt-3 border-t border-zinc-800/50 flex justify-between font-medium">
+            <span className="text-zinc-300">Total Fixed</span>
+            <span className="text-zinc-100">{formatCurrency(fixedCosts)}</span>
+          </div>
         </div>
       </div>
     </div>
   );
 };
+
+const AllocationInput = ({
+  label,
+  icon: Icon,
+  value,
+  setter,
+  color,
+  bgColor,
+}: any) => (
+  <div className="flex items-center gap-4">
+    <div
+      className={`w-10 h-10 rounded-2xl flex items-center justify-center ${bgColor} ${color}`}
+    >
+      <Icon className="w-5 h-5" />
+    </div>
+    <div className="flex-1">
+      <p className="text-sm font-medium text-zinc-200">{label}</p>
+      <input
+        type="range"
+        min="0"
+        max="5000"
+        step="100"
+        value={value}
+        onChange={(e) => setter(Number(e.target.value))}
+        className="w-full h-1.5 bg-zinc-800 rounded-full appearance-none accent-indigo-500 mt-2"
+      />
+    </div>
+    <div className="w-20">
+      <input
+        type="text"
+        inputMode="numeric"
+        pattern="[0-9]*"
+        value={value}
+        onChange={(e) => setter(Number(e.target.value))}
+        className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-2 py-2 text-right text-sm text-zinc-100 focus:outline-none focus:border-indigo-500"
+      />
+    </div>
+  </div>
+);
 
 const ExploreTab = ({ places, setPlaces, schedule, setSchedule, getHeaders, tripId }: any) => {
   const [newPlaceTitle, setNewPlaceTitle] = useState("");
@@ -1178,26 +1425,34 @@ const ExploreTab = ({ places, setPlaces, schedule, setSchedule, getHeaders, trip
             placeholder="e.g. Chandni Chowk Parathas"
             className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500"
           />
-          <div className="flex gap-2">
-            <select
-              value={newPlaceCat}
-              onChange={(e) =>
-                setNewPlaceCat(e.target.value as PlaceCategory)
-              }
-              className="flex-1 bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500 appearance-none"
-            >
-              <option value="Street Food">Street Food (&lt;₹300)</option>
-              <option value="Casual Dining">Casual Dining (&lt;₹800)</option>
-              <option value="Premium">Premium (₹1500+)</option>
-              <option value="Hotspot">Hotspot / Attraction</option>
-            </select>
-            <button
-              type="submit"
-              className="bg-indigo-500 hover:bg-indigo-600 text-white px-6 rounded-xl font-semibold transition-colors"
-            >
-              Add
-            </button>
+          <div className="grid grid-cols-2 gap-2">
+            {[
+              { id: "Street Food", label: "Street Food", icon: Coffee },
+              { id: "Casual Dining", label: "Casual", icon: UtensilsCrossed },
+              { id: "Premium", label: "Premium", icon: Wine },
+              { id: "Hotspot", label: "Hotspot", icon: Camera },
+            ].map((cat) => (
+              <button
+                key={cat.id}
+                type="button"
+                onClick={() => setNewPlaceCat(cat.id as PlaceCategory)}
+                className={`flex items-center gap-2 p-3 rounded-xl border transition-all ${
+                  newPlaceCat === cat.id
+                    ? "bg-indigo-500/20 border-indigo-500/50 text-indigo-400"
+                    : "bg-zinc-900 border-zinc-800 text-zinc-400 hover:bg-zinc-800"
+                }`}
+              >
+                <cat.icon className="w-4 h-4" />
+                <span className="text-xs font-medium">{cat.label}</span>
+              </button>
+            ))}
           </div>
+          <button
+            type="submit"
+            className="w-full bg-indigo-500 hover:bg-indigo-600 text-white py-3 rounded-xl font-semibold transition-colors"
+          >
+            Add Location
+          </button>
         </form>
       </div>
 
@@ -1208,10 +1463,16 @@ const ExploreTab = ({ places, setPlaces, schedule, setSchedule, getHeaders, trip
         </h3>
         <div className="space-y-3">
           <GuideCard
+            icon={Coffee}
             title="Street Food"
             subtitle="Under ₹300"
             items={streetFood}
-            suggestions={["Paranthe Wali Gali", "Natraj Dahi Bhalle", "Dolma Aunty Momos", "Karim's"]}
+            suggestions={[
+              "Paranthe Wali Gali",
+              "Natraj Dahi Bhalle",
+              "Dolma Aunty Momos",
+              "Karim's",
+            ]}
             onAddSuggestion={(title: string) => {
               setNewPlaceTitle(title);
               setNewPlaceCat("Street Food");
@@ -1219,12 +1480,19 @@ const ExploreTab = ({ places, setPlaces, schedule, setSchedule, getHeaders, trip
             onDelete={handleDeletePlace}
           />
           <GuideCard
+            icon={UtensilsCrossed}
             title="Casual Dining"
             subtitle="Under ₹800"
             items={casualDining}
             onDelete={handleDeletePlace}
           />
-          <GuideCard title="Premium" subtitle="₹1500+" items={premium} onDelete={handleDeletePlace} />
+          <GuideCard
+            icon={Wine}
+            title="Premium"
+            subtitle="₹1500+"
+            items={premium}
+            onDelete={handleDeletePlace}
+          />
         </div>
       </div>
 
@@ -1270,6 +1538,7 @@ const ExpensesTab = ({
   setIsAddIncomeOpen,
   getHeaders,
   tripId,
+  tripName,
 }: any) => {
   const [filter, setFilter] = useState<"all" | "trip" | "savings">("all");
 
@@ -1307,17 +1576,19 @@ const ExpensesTab = ({
     };
 
     try {
-      await fetch("/api/expenses", {
+      const res = await fetch("/api/expenses", {
         method: "POST",
         headers: getHeaders(),
         body: JSON.stringify(newExp),
       });
+      if (!res.ok) throw new Error("Failed to save expense");
       setExpenses([newExp, ...expenses]);
       setIsAddExpenseOpen(false);
       setNewExpTitle("");
       setNewExpAmount("");
     } catch (err) {
       console.error("Failed to add expense", err);
+      alert("Failed to save expense. Please try again.");
     }
   };
 
@@ -1339,41 +1610,47 @@ const ExpensesTab = ({
     };
 
     try {
-      await fetch("/api/incomes", {
+      const res = await fetch("/api/incomes", {
         method: "POST",
         headers: getHeaders(),
         body: JSON.stringify(newInc),
       });
+      if (!res.ok) throw new Error("Failed to save income");
       setIncomes([newInc, ...incomes]);
       setIsAddIncomeOpen(false);
       setNewIncTitle("");
       setNewIncAmount("");
     } catch (err) {
       console.error("Failed to add income", err);
+      alert("Failed to save income. Please try again.");
     }
   };
 
   const handleDeleteExpense = async (id: string) => {
     try {
-      await fetch(`/api/expenses/${id}`, {
+      const res = await fetch(`/api/expenses/${id}`, {
         method: "DELETE",
         headers: getHeaders(),
       });
+      if (!res.ok) throw new Error("Failed to delete expense");
       setExpenses(expenses.filter((e: Expense) => e.id !== id));
     } catch (err) {
       console.error("Failed to delete expense", err);
+      alert("Failed to delete expense. Please try again.");
     }
   };
 
   const handleDeleteIncome = async (id: string) => {
     try {
-      await fetch(`/api/incomes/${id}`, {
+      const res = await fetch(`/api/incomes/${id}`, {
         method: "DELETE",
         headers: getHeaders(),
       });
+      if (!res.ok) throw new Error("Failed to delete income");
       setIncomes(incomes.filter((i: Income) => i.id !== id));
     } catch (err) {
       console.error("Failed to delete income", err);
+      alert("Failed to delete income. Please try again.");
     }
   };
 
@@ -1412,7 +1689,7 @@ const ExpensesTab = ({
             onClick={() => setFilter(f as any)}
             className={`flex-1 py-2.5 rounded-xl text-xs font-semibold uppercase tracking-wider transition-all ${filter === f ? "bg-zinc-800 text-zinc-100 shadow-sm" : "text-zinc-500 hover:text-zinc-300"}`}
           >
-            {f}
+            {f === "trip" ? tripName || "Trip" : f}
           </button>
         ))}
       </div>
@@ -1447,7 +1724,7 @@ const ExpensesTab = ({
                       <span
                         className={`text-[9px] px-1.5 py-0.5 rounded uppercase font-bold tracking-wider ${inc.accountId === "trip" ? "bg-indigo-500/20 text-indigo-400" : "bg-emerald-500/20 text-emerald-400"}`}
                       >
-                        {inc.accountId}
+                        {inc.accountId === "trip" ? tripName || "Trip" : inc.accountId}
                       </span>
                     )}
                   </div>
@@ -1495,7 +1772,7 @@ const ExpensesTab = ({
                         <span
                           className={`text-[9px] px-1.5 py-0.5 rounded uppercase font-bold tracking-wider ${exp.accountId === "trip" ? "bg-indigo-500/20 text-indigo-400" : "bg-emerald-500/20 text-emerald-400"}`}
                         >
-                          {exp.accountId}
+                          {exp.accountId === "trip" ? tripName || "Trip" : exp.accountId}
                         </span>
                       )}
                     </div>
@@ -1536,7 +1813,7 @@ const ExpensesTab = ({
                   onClick={() => setNewExpAccount("trip")}
                   className={`flex-1 py-3 rounded-xl text-sm font-semibold transition-all ${newExpAccount === "trip" ? "bg-indigo-500/20 text-indigo-400" : "text-zinc-500 hover:text-zinc-300"}`}
                 >
-                  Trip
+                  {tripName || "Trip"}
                 </button>
                 <button
                   type="button"
@@ -1601,7 +1878,7 @@ const ExpensesTab = ({
                   onClick={() => setNewIncAccount("trip")}
                   className={`flex-1 py-3 rounded-xl text-sm font-semibold transition-all ${newIncAccount === "trip" ? "bg-indigo-500/20 text-indigo-400" : "text-zinc-500 hover:text-zinc-300"}`}
                 >
-                  Trip
+                  {tripName || "Trip"}
                 </button>
                 <button
                   type="button"
@@ -1684,6 +1961,9 @@ const DashboardTab = ({
   baseSavings,
   setBaseSavings,
   saveFinances,
+  customCosts = [],
+  setCustomCosts,
+  tripName,
 }: any) => (
   <div className="space-y-6 animate-in fade-in duration-500 pb-40">
     {/* Savings Overview */}
@@ -1751,11 +2031,11 @@ const DashboardTab = ({
       </div>
     </div>
 
-    {/* Delhi Trip Finances */}
+    {/* Trip Finances */}
     <div className="bg-zinc-900/50 dark:bg-zinc-900/40 backdrop-blur-md border border-zinc-800/50 rounded-3xl p-6 shadow-lg">
       <div className="flex items-center justify-between mb-6">
         <h3 className="text-lg font-semibold text-zinc-100">
-          Delhi Trip Finances
+          {tripName || "Trip"} Finances
         </h3>
         <button
           onClick={() => {
@@ -1781,20 +2061,20 @@ const DashboardTab = ({
         />
         <div className="h-px bg-zinc-800/50 my-2" />
         <FixedItem
-          label="Platinum Ticket"
+          label="Ticket Cost"
           value={platinumTicket}
           setter={setPlatinumTicket}
           isEditing={isEditingTrip}
         />
         <FixedItem
-          label="Pending Platinum"
+          label="Pending Ticket Cost"
           value={pendingPlatinum}
           setter={setPendingPlatinum}
           isEditing={isEditingTrip}
           className="text-rose-400"
         />
         <FixedItem
-          label="Flight Total"
+          label="Flight Cost"
           value={flightTotal}
           setter={setFlightTotal}
           isEditing={isEditingTrip}
@@ -1806,11 +2086,76 @@ const DashboardTab = ({
           isEditing={isEditingTrip}
         />
         <FixedItem
-          label="Stay"
+          label="Stay Cost"
           value={stay}
           setter={setStay}
           isEditing={isEditingTrip}
         />
+
+        {/* Custom Costs */}
+        {customCosts.map((cost: any, index: number) => (
+          <div key={cost.id} className="flex justify-between items-center">
+            {isEditingTrip ? (
+              <div className="flex gap-2 w-full items-center">
+                <input
+                  type="text"
+                  value={cost.label}
+                  onChange={(e) => {
+                    const newCosts = [...customCosts];
+                    newCosts[index].label = e.target.value;
+                    setCustomCosts(newCosts);
+                  }}
+                  className="flex-1 bg-zinc-900 border border-zinc-800 rounded-lg px-2 py-1 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500"
+                  placeholder="Label"
+                />
+                <input
+                  type="number"
+                  value={cost.amount}
+                  onChange={(e) => {
+                    const newCosts = [...customCosts];
+                    newCosts[index].amount = Number(e.target.value);
+                    setCustomCosts(newCosts);
+                  }}
+                  className="w-20 bg-zinc-900 border border-zinc-800 rounded-lg px-2 py-1 text-right text-sm text-zinc-100 focus:outline-none focus:border-indigo-500"
+                  placeholder="0"
+                />
+                <button
+                  onClick={() => {
+                    const newCosts = customCosts.filter(
+                      (_: any, i: number) => i !== index,
+                    );
+                    setCustomCosts(newCosts);
+                  }}
+                  className="p-1 text-zinc-500 hover:text-rose-500"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            ) : (
+              <>
+                <span className="text-sm text-zinc-500">{cost.label}</span>
+                <span className="text-sm font-medium text-zinc-100">
+                  {formatCurrency(cost.amount)}
+                </span>
+              </>
+            )}
+          </div>
+        ))}
+
+        {isEditingTrip && (
+          <button
+            onClick={() =>
+              setCustomCosts([
+                ...customCosts,
+                { id: Date.now().toString(), label: "New Cost", amount: 0 },
+              ])
+            }
+            className="w-full py-2 border border-dashed border-zinc-700 rounded-xl text-xs text-zinc-400 hover:text-zinc-200 hover:border-zinc-500 transition-colors"
+          >
+            + Add Fixed Cost
+          </button>
+        )}
+
         <div className="h-px bg-zinc-800/50 my-2" />
         <FixedItem
           label="Expected Incoming"
